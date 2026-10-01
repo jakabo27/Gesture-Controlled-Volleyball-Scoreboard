@@ -1,0 +1,18 @@
+[Unit]
+Description=Volleyball Scoreboard Pose Estimation Engine
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Documents
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -u /home/pi/Documents/PoseEstimationJT_Optimized.py
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

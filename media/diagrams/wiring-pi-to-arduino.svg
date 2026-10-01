@@ -1,0 +1,560 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 1560" width="1320" height="1560">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0b1120"/>
+      <stop offset="50%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="piHeader" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#be123c"/>
+      <stop offset="100%" stop-color="#e11d48"/>
+    </linearGradient>
+    <linearGradient id="arduinoHeader" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="sectionGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1320" height="1560" fill="url(#bgGrad)"/>
+
+  <!-- ==================== TOP TITLE BANNER ==================== -->
+  <rect x="50" y="20" width="1220" height="68" rx="8" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+  <text x="660" y="47" fill="#38bdf8" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle">
+    Volleyball Scoreboard: Raspberry Pi (Pi 4 / 3B+) to Arduino MEGA Wiring &amp; Pinout
+  </text>
+  <text x="660" y="70" fill="#94a3b8" font-family="Arial, sans-serif" font-size="13" text-anchor="middle">
+    Verified Hardware: Scoreboard is running a Raspberry Pi 4 Model B (2GB Rev 1.5) | Fully Compatible with Pi 3B+ Pinout
+  </text>
+
+  <!-- ==================== SECTION 1: SCHEMATIC SIGNAL MAPPING ==================== -->
+  
+  <!-- LEFT BOX: RASPBERRY PI OUTPUTS -->
+  <g transform="translate(60, 105)" filter="url(#shadow)">
+    <rect width="440" height="690" rx="10" fill="#111827" stroke="#be123c" stroke-width="2.5"/>
+    <rect width="440" height="50" rx="10" fill="url(#piHeader)"/>
+    <text x="220" y="32" fill="#ffffff" font-family="Arial, sans-serif" font-size="17" font-weight="bold" text-anchor="middle">
+      Raspberry Pi 4 / 3B+ (40-Pin Header)
+    </text>
+    <text x="220" y="75" fill="#f43f5e" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">
+      Signal Outputs (3.3V Logic Level)
+    </text>
+
+    <!-- Pin 29 (GPIO 5) -> Away Up -->
+    <g transform="translate(20, 100)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#e11d48"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">29</text>
+      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 5 (D5) - Away Score (+1)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Active-High 50ms Pulse (Away T-Pose)</text>
+    </g>
+
+    <!-- Pin 31 (GPIO 6) -> Home Up -->
+    <g transform="translate(20, 155)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#e11d48"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">31</text>
+      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 6 (D6) - Home Score (+1)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Active-High 50ms Pulse (Home T-Pose)</text>
+    </g>
+
+    <!-- Pin 35 (GPIO 19) -> Home Cobra -->
+    <g transform="translate(20, 210)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ea580c" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#ea580c"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">35</text>
+      <text x="50" y="19" fill="#fb923c" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 19 (D19) - Home Cobra (-1)</text>
+      <text x="50" y="34" fill="#fdba74" font-family="Arial, sans-serif" font-size="11">Orange Skinny Wire (Subtract Home)</text>
+    </g>
+
+    <!-- Pin 40 (GPIO 21) -> Away Cobra -->
+    <g transform="translate(20, 265)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#eab308" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#eab308"/>
+      <text x="25" y="26" fill="#000000" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">40</text>
+      <text x="50" y="19" fill="#facc15" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 21 (D21) - Away Cobra (-1)</text>
+      <text x="50" y="34" fill="#fef08a" font-family="Arial, sans-serif" font-size="11">Yellow Skinny Wire (Subtract Away)</text>
+    </g>
+
+    <!-- Pin 37 (GPIO 26) -> Heartbeat -->
+    <g transform="translate(20, 320)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#10b981" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#10b981"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">37</text>
+      <text x="50" y="19" fill="#4ade80" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 26 (D26) - Heartbeat Pulse</text>
+      <text x="50" y="34" fill="#86efac" font-family="Arial, sans-serif" font-size="11">Green Wire | Toggles every 1.0 s</text>
+    </g>
+
+    <!-- Pin 33 (GPIO 13) -> Spare -->
+    <g transform="translate(20, 375)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#4b5563" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#6b7280"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">33</text>
+      <text x="50" y="19" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 13 (D13) - Spare Wire</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Gray Wire (Auxiliary line)</text>
+    </g>
+
+    <!-- Pin 39 (GND) -> Common Ground -->
+    <g transform="translate(20, 430)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#3b82f6" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#1d4ed8"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">39</text>
+      <text x="50" y="19" fill="#60a5fa" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 39 - Common Ground (GND)</text>
+      <text x="50" y="34" fill="#93c5fd" font-family="Arial, sans-serif" font-size="11">Ties Pi Ground to Arduino MEGA Ground</text>
+    </g>
+
+    <!-- Pi Local Peripherals Section -->
+    <g transform="translate(20, 495)">
+      <rect width="400" height="170" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <text x="15" y="24" fill="#f43f5e" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Other Connected Pi Peripherals:</text>
+      <text x="15" y="46" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 32 (GPIO 12) → Power Button (Hold 5 s = Shutdown)</text>
+      <text x="15" y="66" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 24 (CE0 / GPIO 8) → SSD1351 OLED Chip Select (CS)</text>
+      <text x="15" y="86" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 22 (GPIO 25) → SSD1351 OLED Data/Command (DC)</text>
+      <text x="15" y="106" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 18 (GPIO 24) → SSD1351 OLED Reset (RST)</text>
+      <text x="15" y="126" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 19 (MOSI) &amp; Pin 23 (SCLK) → OLED Hardware SPI Bus</text>
+      <text x="15" y="146" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 1 (3V3) &amp; Pin 6 (GND) → SSD1351 OLED Power</text>
+    </g>
+  </g>
+
+  <!-- MIDDLE SECTION: CONNECTING WIRES & SPECS -->
+  <g transform="translate(515, 105)">
+    <!-- Wire 1: Away Up (Pin 29 -> Pin 47) -->
+    <path d="M 0,121 C 130,121 160,121 290,121" stroke="#e11d48" stroke-width="3.5" fill="none"/>
+    <polygon points="290,121 282,116 282,126" fill="#e11d48"/>
+
+    <!-- Wire 2: Home Up (Pin 31 -> Pin 45) -->
+    <path d="M 0,176 C 130,176 160,176 290,176" stroke="#f43f5e" stroke-width="3.5" fill="none"/>
+    <polygon points="290,176 282,171 282,181" fill="#f43f5e"/>
+
+    <!-- Wire 3: Home Cobra (Pin 35 -> Pin 42) -->
+    <path d="M 0,231 C 130,231 160,231 290,231" stroke="#ea580c" stroke-width="3.5" stroke-dasharray="6,3" fill="none"/>
+    <polygon points="290,231 282,226 282,236" fill="#ea580c"/>
+    <rect x="85" y="218" width="120" height="22" rx="4" fill="#0f172a" stroke="#ea580c" stroke-width="1"/>
+    <text x="145" y="233" fill="#fb923c" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">Orange Wire</text>
+
+    <!-- Wire 4: Away Cobra (Pin 40 -> Pin 43) -->
+    <path d="M 0,286 C 130,286 160,286 290,286" stroke="#eab308" stroke-width="3.5" stroke-dasharray="6,3" fill="none"/>
+    <polygon points="290,286 282,281 282,291" fill="#eab308"/>
+    <rect x="85" y="273" width="120" height="22" rx="4" fill="#0f172a" stroke="#eab308" stroke-width="1"/>
+    <text x="145" y="288" fill="#facc15" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">Yellow Wire</text>
+
+    <!-- Wire 5: Heartbeat (Pin 37 -> Pin 46) -->
+    <path d="M 0,341 C 130,341 160,341 290,341" stroke="#10b981" stroke-width="3.5" fill="none"/>
+    <polygon points="290,341 282,336 282,346" fill="#10b981"/>
+    <rect x="85" y="328" width="120" height="22" rx="4" fill="#0f172a" stroke="#10b981" stroke-width="1"/>
+    <text x="145" y="343" fill="#4ade80" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">Green Wire (1.0 s)</text>
+
+    <!-- Wire 6: Spare (Pin 33 -> Pin 44) -->
+    <path d="M 0,396 C 130,396 160,396 290,396" stroke="#6b7280" stroke-width="3" stroke-dasharray="4,4" fill="none"/>
+    <polygon points="290,396 282,391 282,401" fill="#6b7280"/>
+    <rect x="85" y="383" width="120" height="22" rx="4" fill="#0f172a" stroke="#6b7280" stroke-width="1"/>
+    <text x="145" y="398" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">Gray Wire (Spare)</text>
+
+    <!-- Wire 7: Ground (Pin 39 -> Arduino GND) -->
+    <path d="M 0,451 C 130,451 160,451 290,451" stroke="#1d4ed8" stroke-width="4" fill="none"/>
+    <polygon points="290,451 282,446 282,456" fill="#1d4ed8"/>
+    <rect x="70" y="438" width="150" height="22" rx="4" fill="#0f172a" stroke="#1d4ed8" stroke-width="1"/>
+    <text x="145" y="453" fill="#60a5fa" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">COMMON GND (Required)</text>
+
+    <!-- Center Callout Box: Logic Level Safety -->
+    <g transform="translate(25, 510)">
+      <rect width="240" height="150" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="120" y="24" fill="#38bdf8" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">LOGIC LEVEL SAFE</text>
+      <text x="15" y="46" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10" font-weight="bold">Pi Output: 3.3V Logic</text>
+      <text x="15" y="62" fill="#94a3b8" font-family="Arial, sans-serif" font-size="10">• High: 3.3V, Low: 0.0V</text>
+      <text x="15" y="80" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10" font-weight="bold">Arduino Input: 5V ATmega</text>
+      <text x="15" y="96" fill="#94a3b8" font-family="Arial, sans-serif" font-size="10">• V_IH (Min High) = 3.0V</text>
+      <text x="15" y="112" fill="#4ade80" font-family="Arial, sans-serif" font-size="10">✓ 3.3V directly triggers Arduino!</text>
+      <text x="15" y="128" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10">• No level shifters needed</text>
+      <text x="15" y="142" fill="#facc15" font-family="Arial, sans-serif" font-size="9">⚠️ Never send 5V into Pi pins!</text>
+    </g>
+  </g>
+
+  <!-- RIGHT BOX: ARDUINO MEGA 2560 INPUTS -->
+  <g transform="translate(820, 105)" filter="url(#shadow)">
+    <rect width="440" height="690" rx="10" fill="#111827" stroke="#0284c7" stroke-width="2.5"/>
+    <rect width="440" height="50" rx="10" fill="url(#arduinoHeader)"/>
+    <text x="220" y="32" fill="#ffffff" font-family="Arial, sans-serif" font-size="17" font-weight="bold" text-anchor="middle">
+      Arduino MEGA 2560 (Scoreboard Controller)
+    </text>
+    <text x="220" y="75" fill="#38bdf8" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">
+      Digital Input Pins (5V Tolerant, 3.0V+ High Detection)
+    </text>
+
+    <!-- Arduino Pin 47 -> Away Score -->
+    <g transform="translate(20, 100)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#0284c7"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">47</text>
+      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 47 (PiPinAway)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Increments Away Score | Plays PtAwy.wav</text>
+    </g>
+
+    <!-- Arduino Pin 45 -> Home Score -->
+    <g transform="translate(20, 155)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#0284c7"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">45</text>
+      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 45 (PiPinHome)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Increments Home Score | Plays PtHm.wav</text>
+    </g>
+
+    <!-- Arduino Pin 42 -> Home Cobra -->
+    <g transform="translate(20, 210)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ea580c" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#ea580c"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">42</text>
+      <text x="50" y="19" fill="#fb923c" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 42 (PiPinSurrenderHome)</text>
+      <text x="50" y="34" fill="#fdba74" font-family="Arial, sans-serif" font-size="11">Decrements Home Score | Plays SurHo.wav</text>
+    </g>
+
+    <!-- Arduino Pin 43 -> Away Cobra -->
+    <g transform="translate(20, 265)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#eab308" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#eab308"/>
+      <text x="25" y="26" fill="#000000" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">43</text>
+      <text x="50" y="19" fill="#facc15" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 43 (PiPinSurrenderAway)</text>
+      <text x="50" y="34" fill="#fef08a" font-family="Arial, sans-serif" font-size="11">Decrements Away Score | Plays SurAw.wav</text>
+    </g>
+
+    <!-- Arduino Pin 46 -> Heartbeat -->
+    <g transform="translate(20, 320)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#10b981" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#10b981"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">46</text>
+      <text x="50" y="19" fill="#4ade80" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 46 (PiPinHeartbeat)</text>
+      <text x="50" y="34" fill="#86efac" font-family="Arial, sans-serif" font-size="11">LED 126 indicator | Keeps raspiOn = 1</text>
+    </g>
+
+    <!-- Arduino Pin 44 -> Spare -->
+    <g transform="translate(20, 375)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#4b5563" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#6b7280"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">44</text>
+      <text x="50" y="19" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 44 (PiSparePin)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Auxiliary digital input</text>
+    </g>
+
+    <!-- Arduino GND -->
+    <g transform="translate(20, 430)">
+      <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#3b82f6" stroke-width="1.5"/>
+      <circle cx="25" cy="21" r="12" fill="#1d4ed8"/>
+      <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">GND</text>
+      <text x="50" y="19" fill="#60a5fa" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GND Pin (Power / Header)</text>
+      <text x="50" y="34" fill="#93c5fd" font-family="Arial, sans-serif" font-size="11">Connected to Pi Pin 39 (Prevents Floating Signals)</text>
+    </g>
+
+    <!-- Arduino Peripherals Section -->
+    <g transform="translate(20, 495)">
+      <rect width="400" height="170" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <text x="15" y="24" fill="#38bdf8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Connected Arduino Peripherals:</text>
+      <text x="15" y="46" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 3 (PWM) → WS2812B LED Data (252 Neopixels)</text>
+      <text x="15" y="66" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 5 → Speaker Audio Out (TMRpcm WAV output)</text>
+      <text x="15" y="86" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pin 40 → SD Card Chip Select (SPI: 50, 51, 52)</text>
+      <text x="15" y="106" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pins 6, 7, 8, 11, 12 → Physical Pushbuttons (Score/Reset)</text>
+      <text x="15" y="126" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pins A0, A1, A2 → Analog Slider Pots (Bright, Colors)</text>
+      <text x="15" y="146" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11">• Pins 20 (SDA), 21 (SCL) → 16x2 I2C LCD Display (0x27)</text>
+    </g>
+  </g>
+
+  <!-- ==================== SECTION 2: PHYSICAL BOARD PIN LOCATOR MAPS ==================== -->
+  
+  <g transform="translate(50, 825)">
+    <rect width="1220" height="42" rx="6" fill="url(#sectionGrad)" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="610" y="27" fill="#ffffff" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">
+      PHYSICAL PIN LOCATOR: WHERE THE PINS ARE ON THE ACTUAL BOARDS
+    </text>
+  </g>
+
+  <!-- LEFT PHYSICAL MAP: RASPBERRY PI 40-PIN HEADER (TOP-DOWN VIEW) -->
+  <g transform="translate(60, 885)" filter="url(#shadow)">
+    <rect width="570" height="645" rx="10" fill="#111827" stroke="#e11d48" stroke-width="2"/>
+    <rect width="570" height="40" rx="10" fill="#be123c"/>
+    <text x="285" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="15" font-weight="bold" text-anchor="middle">
+      Raspberry Pi 4 / 3B+ 40-Pin Header (Physical Socket Map)
+    </text>
+
+    <!-- Orientation Notes -->
+    <text x="285" y="65" fill="#fca5a5" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">
+      ▲ TOP: MicroSD Slot &amp; Display Ribbon | BOTTOM: USB &amp; Ethernet Ports ▼
+    </text>
+
+    <!-- Visual 40-pin header rectangle representation -->
+    <rect x="70" y="80" width="130" height="540" rx="6" fill="#1f2937" stroke="#4b5563" stroke-width="2"/>
+    <text x="95" y="100" fill="#9ca3af" font-family="Arial, sans-serif" font-size="10" font-weight="bold">ODD (Left)</text>
+    <text x="145" y="100" fill="#9ca3af" font-family="Arial, sans-serif" font-size="10" font-weight="bold">EVEN (Rt)</text>
+
+    <!-- Helper Pins on top rows (unconnected or OLED) -->
+    <!-- Row 1: Pin 1 (3V3), Pin 2 (5V) -->
+    <circle cx="105" cy="120" r="9" fill="#f59e0b"/><text x="105" y="123" fill="#000" font-size="8" font-weight="bold" text-anchor="middle">1</text>
+    <circle cx="165" cy="120" r="9" fill="#ef4444"/><text x="165" y="123" fill="#fff" font-size="8" font-weight="bold" text-anchor="middle">2</text>
+    <!-- Row 2: Pin 3, Pin 4 -->
+    <circle cx="105" cy="142" r="8" fill="#374151"/><circle cx="165" cy="142" r="8" fill="#ef4444"/>
+    <!-- Row 3: Pin 5, Pin 6 (GND) -->
+    <circle cx="105" cy="164" r="8" fill="#374151"/><circle cx="165" cy="164" r="8" fill="#1d4ed8"/>
+    <!-- Rows 4 to 13: standard pins -->
+    <circle cx="105" cy="186" r="8" fill="#374151"/><circle cx="165" cy="186" r="8" fill="#374151"/>
+    <circle cx="105" cy="208" r="8" fill="#374151"/><circle cx="165" cy="208" r="8" fill="#374151"/>
+    <circle cx="105" cy="230" r="8" fill="#374151"/><circle cx="165" cy="230" r="8" fill="#374151"/>
+    <circle cx="105" cy="252" r="8" fill="#374151"/><circle cx="165" cy="252" r="8" fill="#374151"/>
+    <circle cx="105" cy="274" r="8" fill="#374151"/><circle cx="165" cy="274" r="8" fill="#8b5cf6"/><text x="165" y="277" fill="#fff" font-size="7" text-anchor="middle">18</text>
+    <circle cx="105" cy="296" r="8" fill="#8b5cf6"/><circle cx="165" cy="296" r="8" fill="#374151"/>
+    <circle cx="105" cy="318" r="8" fill="#374151"/><circle cx="165" cy="318" r="8" fill="#8b5cf6"/><text x="165" y="321" fill="#fff" font-size="7" text-anchor="middle">22</text>
+    <circle cx="105" cy="340" r="8" fill="#8b5cf6"/><circle cx="165" cy="340" r="8" fill="#8b5cf6"/><text x="165" y="343" fill="#fff" font-size="7" text-anchor="middle">24</text>
+    <circle cx="105" cy="362" r="8" fill="#374151"/><circle cx="165" cy="362" r="8" fill="#374151"/>
+    <circle cx="105" cy="384" r="8" fill="#374151"/><circle cx="165" cy="384" r="8" fill="#374151"/>
+
+    <!-- ================= CRITICAL SCOREBOARD PINS (PINS 29-40 AT BOTTOM) ================= -->
+    <!-- Row 15: Pin 29 (Away Up) & Pin 30 -->
+    <circle cx="105" cy="410" r="11" fill="#e11d48" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="105" y="414" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">29</text>
+    <circle cx="165" cy="410" r="8" fill="#374151"/>
+
+    <!-- Row 16: Pin 31 (Home Up) & Pin 32 (Power Btn) -->
+    <circle cx="105" cy="438" r="11" fill="#e11d48" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="105" y="442" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">31</text>
+    <circle cx="165" cy="438" r="9" fill="#065f46"/><text x="165" y="441" fill="#fff" font-size="7" text-anchor="middle">32</text>
+
+    <!-- Row 17: Pin 33 (Spare) & Pin 34 -->
+    <circle cx="105" cy="466" r="11" fill="#6b7280" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="105" y="470" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">33</text>
+    <circle cx="165" cy="466" r="8" fill="#374151"/>
+
+    <!-- Row 18: Pin 35 (Home Cobra) & Pin 36 -->
+    <circle cx="105" cy="494" r="11" fill="#ea580c" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="105" y="498" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">35</text>
+    <circle cx="165" cy="494" r="8" fill="#374151"/>
+
+    <!-- Row 19: Pin 37 (Heartbeat) & Pin 38 -->
+    <circle cx="105" cy="522" r="11" fill="#10b981" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="105" y="526" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">37</text>
+    <circle cx="165" cy="522" r="8" fill="#374151"/>
+
+    <!-- Row 20: Pin 39 (GND) & Pin 40 (Away Cobra) -->
+    <circle cx="105" cy="550" r="11" fill="#1d4ed8" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="105" y="554" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">39</text>
+    <circle cx="165" cy="550" r="11" fill="#eab308" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="165" y="554" fill="#000000" font-size="9" font-weight="bold" text-anchor="middle">40</text>
+
+    <!-- Bracket and callout for the Scoreboard Cluster -->
+    <path d="M 60,398 L 45,398 L 45,562 L 60,562" fill="none" stroke="#f43f5e" stroke-width="2"/>
+    <text x="40" y="480" fill="#f43f5e" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="end">Scoreboard Cluster</text>
+    <text x="40" y="495" fill="#9ca3af" font-family="Arial, sans-serif" font-size="9" text-anchor="end">(Bottom 6 Odd Pins!)</text>
+
+    <!-- RIGHT CALLOUT LIST FOR PI HEADER -->
+    <g transform="translate(225, 385)">
+      <!-- Callout Pin 29 -->
+      <line x1="-50" y1="25" x2="-10" y2="25" stroke="#e11d48" stroke-width="2"/>
+      <rect x="0" y="10" width="320" height="28" rx="4" fill="#1e293b" stroke="#e11d48" stroke-width="1.5"/>
+      <text x="10" y="28" fill="#f43f5e" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 29 (GPIO 5): Away Score (+1)</text>
+
+      <!-- Callout Pin 31 -->
+      <line x1="-50" y1="53" x2="-10" y2="53" stroke="#e11d48" stroke-width="2"/>
+      <rect x="0" y="42" width="320" height="28" rx="4" fill="#1e293b" stroke="#e11d48" stroke-width="1.5"/>
+      <text x="10" y="60" fill="#f43f5e" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 31 (GPIO 6): Home Score (+1)</text>
+
+      <!-- Callout Pin 33 -->
+      <line x1="-50" y1="81" x2="-10" y2="81" stroke="#6b7280" stroke-width="2"/>
+      <rect x="0" y="74" width="320" height="28" rx="4" fill="#1e293b" stroke="#6b7280" stroke-width="1.5"/>
+      <text x="10" y="92" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 33 (GPIO 13): Spare (Gray)</text>
+
+      <!-- Callout Pin 35 -->
+      <line x1="-50" y1="109" x2="-10" y2="109" stroke="#ea580c" stroke-width="2"/>
+      <rect x="0" y="106" width="320" height="28" rx="4" fill="#1e293b" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="10" y="124" fill="#fb923c" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 35 (GPIO 19): Home Cobra (Orange)</text>
+
+      <!-- Callout Pin 37 -->
+      <line x1="-50" y1="137" x2="-10" y2="137" stroke="#10b981" stroke-width="2"/>
+      <rect x="0" y="138" width="320" height="28" rx="4" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+      <text x="10" y="156" fill="#4ade80" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 37 (GPIO 26): Heartbeat (Green)</text>
+
+      <!-- Callout Pin 39 & 40 -->
+      <line x1="-50" y1="165" x2="-10" y2="165" stroke="#1d4ed8" stroke-width="2"/>
+      <line x1="10" y1="165" x2="-10" y2="197" stroke="#eab308" stroke-width="2"/>
+      <rect x="0" y="170" width="320" height="48" rx="4" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="10" y="188" fill="#60a5fa" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 39: Common Ground (GND - Corner Pin!)</text>
+      <text x="10" y="206" fill="#facc15" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Pin 40 (GPIO 21): Away Cobra (Yellow - Across 39!)</text>
+    </g>
+
+    <!-- Top explanation note inside box -->
+    <g transform="translate(225, 120)">
+      <rect width="320" height="235" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="15" y="24" fill="#38bdf8" font-family="Arial, sans-serif" font-size="12" font-weight="bold">Physical Pi Pin Finding Guide:</text>
+      <text x="15" y="46" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">1. Orient board so USB ports point DOWN.</text>
+      <text x="15" y="66" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">2. Left column = ODD pins (1, 3, 5 ... 39).</text>
+      <text x="15" y="86" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">3. Right column = EVEN pins (2, 4, 6 ... 40).</text>
+      <text x="15" y="110" fill="#4ade80" font-family="Arial, sans-serif" font-size="11" font-weight="bold">The Golden Rule for your Scoreboard:</text>
+      <text x="15" y="130" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10.5">• All score wires are on the <tspan fill="#e11d48" font-weight="bold">LEFT (ODD)</tspan> column</text>
+      <text x="25" y="148" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">starting at Pin 29 down to Pin 39 (GND)!</text>
+      <text x="15" y="170" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10.5">• The ONLY score wire on the <tspan fill="#eab308" font-weight="bold">RIGHT (EVEN)</tspan> column</text>
+      <text x="25" y="188" fill="#facc15" font-family="Arial, sans-serif" font-size="10.5">is Pin 40 (Yellow Wire), directly opposite GND!</text>
+      <text x="15" y="215" fill="#94a3b8" font-family="Arial, sans-serif" font-size="10">Pin 39 (GND) is the very bottom-left pin on the header.</text>
+    </g>
+  </g>
+
+  <!-- RIGHT PHYSICAL MAP: ARDUINO MEGA 2560 2x18 DIGITAL HEADER (TOP-DOWN VIEW) -->
+  <g transform="translate(690, 885)" filter="url(#shadow)">
+    <rect width="570" height="645" rx="10" fill="#111827" stroke="#0284c7" stroke-width="2"/>
+    <rect width="570" height="40" rx="10" fill="#0284c7"/>
+    <text x="285" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="15" font-weight="bold" text-anchor="middle">
+      Arduino MEGA 2560 Digital Header (Physical Socket Map)
+    </text>
+
+    <!-- Header Description -->
+    <text x="285" y="65" fill="#7dd3fc" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">
+      Double-Row 2x18 Header at the Short Edge of the MEGA (Pins 22–53 + GND)
+    </text>
+
+    <!-- The 2x18 Header Representation: Horizontal Grid -->
+    <!-- Outer Row (Closer to board edge) = Even Pins (22, 24, 26 ... 52, GND, GND) -->
+    <!-- Inner Row (Further inside board) = Odd Pins (23, 25, 27 ... 53, 5V, 5V) -->
+    
+    <g transform="translate(25, 95)">
+      <!-- Board Edge Indication -->
+      <rect x="0" y="0" width="520" height="15" fill="#334155" rx="3"/>
+      <text x="260" y="11" fill="#94a3b8" font-family="Arial, sans-serif" font-size="9" font-weight="bold" text-anchor="middle">
+        OUTER BOARD EDGE (Even Pins Row)
+      </text>
+
+      <!-- Outer Row (Even Pins: 22 to 52 + GND) -->
+      <!-- We render columns 1 to 18 -->
+      <!-- Pins 22 to 40 (cols 0-9): unhighlighted -->
+      <!-- Pins 42, 44, 46, 48, 50, 52, GND, GND -->
+      
+      <!-- Inner Board Indication -->
+      <rect x="0" y="115" width="520" height="15" fill="#1e293b" rx="3"/>
+      <text x="260" y="126" fill="#94a3b8" font-family="Arial, sans-serif" font-size="9" font-weight="bold" text-anchor="middle">
+        INNER BOARD ROW (Odd Pins Row)
+      </text>
+
+      <!-- Header Socket Box -->
+      <rect x="5" y="20" width="510" height="90" rx="6" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+
+      <!-- Let's render the 18 columns of pins! -->
+      <!-- Col 0: 22 / 23 -->
+      <circle cx="25" cy="45" r="7" fill="#334155"/><text x="25" y="48" fill="#64748b" font-size="7" text-anchor="middle">22</text>
+      <circle cx="25" cy="85" r="7" fill="#334155"/><text x="25" y="88" fill="#64748b" font-size="7" text-anchor="middle">23</text>
+      <!-- Col 1: 24 / 25 -->
+      <circle cx="53" cy="45" r="7" fill="#334155"/><circle cx="53" cy="85" r="7" fill="#334155"/>
+      <!-- Col 2: 26 / 27 -->
+      <circle cx="81" cy="45" r="7" fill="#334155"/><circle cx="81" cy="85" r="7" fill="#334155"/>
+      <!-- Col 3: 28 / 29 -->
+      <circle cx="109" cy="45" r="7" fill="#334155"/><circle cx="109" cy="85" r="7" fill="#334155"/>
+      <!-- Col 4: 30 / 31 -->
+      <circle cx="137" cy="45" r="7" fill="#334155"/><circle cx="137" cy="85" r="7" fill="#334155"/>
+      <!-- Col 5: 32 / 33 -->
+      <circle cx="165" cy="45" r="7" fill="#334155"/><circle cx="165" cy="85" r="7" fill="#334155"/>
+      <!-- Col 6: 34 / 35 -->
+      <circle cx="193" cy="45" r="7" fill="#334155"/><circle cx="193" cy="85" r="7" fill="#334155"/>
+      <!-- Col 7: 36 / 37 -->
+      <circle cx="221" cy="45" r="7" fill="#334155"/><circle cx="221" cy="85" r="7" fill="#334155"/>
+      <!-- Col 8: 38 / 39 -->
+      <circle cx="249" cy="45" r="7" fill="#334155"/><circle cx="249" cy="85" r="7" fill="#334155"/>
+      <!-- Col 9: 40 / 41 -->
+      <circle cx="277" cy="45" r="7" fill="#6366f1"/><text x="277" y="48" fill="#fff" font-size="6.5" text-anchor="middle">40</text>
+      <circle cx="277" cy="85" r="7" fill="#334155"/>
+
+      <!-- ================= CRITICAL ARDUINO SCOREBOARD PINS ================= -->
+      <!-- Col 10: Pin 42 (Home Cobra) / Pin 43 (Away Cobra) -->
+      <rect x="295" y="27" width="28" height="76" rx="4" fill="#431407" stroke="#ea580c" stroke-width="1.5"/>
+      <circle cx="309" cy="45" r="10" fill="#ea580c" stroke="#fff" stroke-width="1.5"/>
+      <text x="309" y="49" fill="#ffffff" font-size="8.5" font-weight="bold" text-anchor="middle">42</text>
+      <circle cx="309" cy="85" r="10" fill="#eab308" stroke="#fff" stroke-width="1.5"/>
+      <text x="309" y="89" fill="#000000" font-size="8.5" font-weight="bold" text-anchor="middle">43</text>
+
+      <!-- Col 11: Pin 44 (Spare) / Pin 45 (Home Up) -->
+      <rect x="329" y="27" width="28" height="76" rx="4" fill="#1f2937" stroke="#f43f5e" stroke-width="1.5"/>
+      <circle cx="343" cy="45" r="10" fill="#6b7280" stroke="#fff" stroke-width="1.5"/>
+      <text x="343" y="49" fill="#ffffff" font-size="8.5" font-weight="bold" text-anchor="middle">44</text>
+      <circle cx="343" cy="85" r="10" fill="#e11d48" stroke="#fff" stroke-width="1.5"/>
+      <text x="343" y="89" fill="#ffffff" font-size="8.5" font-weight="bold" text-anchor="middle">45</text>
+
+      <!-- Col 12: Pin 46 (Heartbeat) / Pin 47 (Away Up) -->
+      <rect x="363" y="27" width="28" height="76" rx="4" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+      <circle cx="377" cy="45" r="10" fill="#10b981" stroke="#fff" stroke-width="1.5"/>
+      <text x="377" y="49" fill="#ffffff" font-size="8.5" font-weight="bold" text-anchor="middle">46</text>
+      <circle cx="377" cy="85" r="10" fill="#0284c7" stroke="#fff" stroke-width="1.5"/>
+      <text x="377" y="89" fill="#ffffff" font-size="8.5" font-weight="bold" text-anchor="middle">47</text>
+
+      <!-- Col 13: 48 / 49 -->
+      <circle cx="411" cy="45" r="7" fill="#334155"/><circle cx="411" cy="85" r="7" fill="#334155"/>
+      <!-- Col 14: 50 / 51 -->
+      <circle cx="439" cy="45" r="7" fill="#334155"/><circle cx="439" cy="85" r="7" fill="#334155"/>
+      <!-- Col 15: 52 / 53 -->
+      <circle cx="467" cy="45" r="7" fill="#334155"/><circle cx="467" cy="85" r="7" fill="#334155"/>
+
+      <!-- Col 16 & 17: GND / 5V Pins at end -->
+      <rect x="483" y="27" width="28" height="40" rx="4" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.5"/>
+      <circle cx="497" cy="45" r="10" fill="#1d4ed8" stroke="#fff" stroke-width="1.5"/>
+      <text x="497" y="48" fill="#ffffff" font-size="6.5" font-weight="bold" text-anchor="middle">GND</text>
+      <circle cx="497" cy="85" r="8" fill="#ef4444"/><text x="497" y="88" fill="#fff" font-size="6.5" text-anchor="middle">5V</text>
+    </g>
+
+    <!-- CALLOUT PIN GUIDE FOR ARDUINO MEGA -->
+    <g transform="translate(25, 245)">
+      <rect width="520" height="375" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <text x="260" y="25" fill="#38bdf8" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">
+        Pin-by-Pin Physical Header Location Reference
+      </text>
+
+      <!-- Pin Pair 1: 42 & 43 -->
+      <g transform="translate(15, 42)">
+        <rect width="490" height="48" rx="6" fill="#0f172a" stroke="#ea580c" stroke-width="1"/>
+        <circle cx="20" cy="24" r="10" fill="#ea580c"/>
+        <text x="20" y="28" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">42</text>
+        <circle cx="45" cy="24" r="10" fill="#eab308"/>
+        <text x="45" y="28" fill="#000" font-size="9" font-weight="bold" text-anchor="middle">43</text>
+        <text x="65" y="20" fill="#fb923c" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Col 10 Pair: Pin 42 (Outer) &amp; Pin 43 (Inner)</text>
+        <text x="65" y="36" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">• Pin 42 = Home Cobra (<tspan fill="#fb923c">Orange Wire</tspan>) | Pin 43 = Away Cobra (<tspan fill="#facc15">Yellow Wire</tspan>)</text>
+      </g>
+
+      <!-- Pin Pair 2: 44 & 45 -->
+      <g transform="translate(15, 98)">
+        <rect width="490" height="48" rx="6" fill="#0f172a" stroke="#e11d48" stroke-width="1"/>
+        <circle cx="20" cy="24" r="10" fill="#6b7280"/>
+        <text x="20" y="28" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">44</text>
+        <circle cx="45" cy="24" r="10" fill="#e11d48"/>
+        <text x="45" y="28" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">45</text>
+        <text x="65" y="20" fill="#f43f5e" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Col 11 Pair: Pin 44 (Outer) &amp; Pin 45 (Inner)</text>
+        <text x="65" y="36" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">• Pin 44 = Spare Wire (<tspan fill="#9ca3af">Gray Wire</tspan>) | Pin 45 = Home Score (+1) (<tspan fill="#f43f5e">Red Wire</tspan>)</text>
+      </g>
+
+      <!-- Pin Pair 3: 46 & 47 -->
+      <g transform="translate(15, 154)">
+        <rect width="490" height="48" rx="6" fill="#0f172a" stroke="#10b981" stroke-width="1"/>
+        <circle cx="20" cy="24" r="10" fill="#10b981"/>
+        <text x="20" y="28" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">46</text>
+        <circle cx="45" cy="24" r="10" fill="#0284c7"/>
+        <text x="45" y="28" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle">47</text>
+        <text x="65" y="20" fill="#4ade80" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Col 12 Pair: Pin 46 (Outer) &amp; Pin 47 (Inner)</text>
+        <text x="65" y="36" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">• Pin 46 = Heartbeat (<tspan fill="#4ade80">Green Wire</tspan>) | Pin 47 = Away Score (+1) (<tspan fill="#38bdf8">Blue Wire</tspan>)</text>
+      </g>
+
+      <!-- Pin Ground -->
+      <g transform="translate(15, 210)">
+        <rect width="490" height="48" rx="6" fill="#0f172a" stroke="#1d4ed8" stroke-width="1"/>
+        <circle cx="25" cy="24" r="10" fill="#1d4ed8"/>
+        <text x="25" y="27" fill="#fff" font-size="7" font-weight="bold" text-anchor="middle">GND</text>
+        <text x="65" y="20" fill="#60a5fa" font-family="Arial, sans-serif" font-size="11" font-weight="bold">Header End: Common Ground (GND Socket)</text>
+        <text x="65" y="36" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5">• Connects to Pi Pin 39 (Bottom-Left Corner GND pin)</text>
+      </g>
+
+      <!-- Quick Summary Tip Box -->
+      <g transform="translate(15, 266)">
+        <rect width="490" height="98" rx="6" fill="#0b1120" stroke="#f59e0b" stroke-width="1"/>
+        <text x="15" y="20" fill="#facc15" font-family="Arial, sans-serif" font-size="11" font-weight="bold">💡 Easy Memorization Trick for Arduino Mega:</text>
+        <text x="15" y="38" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10.5">Pins 42, 43, 44, 45, 46, 47 are <tspan fill="#facc15" font-weight="bold">3 adjacent pairs</tspan> side-by-side!</text>
+        <text x="15" y="56" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10">• Outer Row (Edge): <tspan fill="#fb923c">42 (Orange)</tspan>, <tspan fill="#cbd5e1">44 (Spare)</tspan>, <tspan fill="#4ade80">46 (Green Heartbeat)</tspan></text>
+        <text x="15" y="74" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10">• Inner Row (Inside): <tspan fill="#facc15">43 (Yellow)</tspan>, <tspan fill="#f43f5e">45 (Home Up)</tspan>, <tspan fill="#38bdf8">47 (Away Up)</tspan></text>
+        <text x="15" y="90" fill="#94a3b8" font-family="Arial, sans-serif" font-size="9.5">Count 11 columns in from the left of the 2x18 header to find Pin 42!</text>
+      </g>
+    </g>
+  </g>
+</svg>

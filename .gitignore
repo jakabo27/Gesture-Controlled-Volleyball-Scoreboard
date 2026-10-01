@@ -1,0 +1,37 @@
+# ---- Private working files (never pushed) ---------------------------------
+_private/
+Claude deleteme.md
+
+# ---- Field data: photos of players, never published ------------------------
+FieldCaptures/
+*.mp4
+*.avi
+
+# ---- SD-card audio (includes copyrighted music clips; see arduino/README.md) -
+*.wav
+*.mp3
+
+# ---- Credentials / dev-machine helpers -------------------------------------
+remote_exec.py
+upload_and_verify.py
+check_pi.py
+*.secret
+.env
+
+# ---- Diagram tool output -----------------------------------------------------
+tools/architecture-diagram/out/
+
+# ---- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.log
+
+# ---- AI assistant working dirs (not part of the project) -------------------
+.claude/
+
+# ---- Editor / OS ------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

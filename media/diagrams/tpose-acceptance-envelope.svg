@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="armEnvelopeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="720" fill="url(#bgGrad)"/>
+
+  <!-- Title Header -->
+  <rect x="60" y="24" width="1160" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+  <text x="640" y="52" fill="#38bdf8" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle">
+    T-Pose Anatomical Acceptance Envelope &amp; Tolerance Ranges
+  </text>
+  <text x="640" y="73" fill="#94a3b8" font-family="Arial, sans-serif" font-size="13" text-anchor="middle">
+    Defines the exact geometric bounds recognized by the vision pipeline across all court positions
+  </text>
+
+  <!-- ==================== LEFT PANEL: SKELETON WITH ENVELOPES ==================== -->
+  <g transform="translate(80, 110)">
+    <!-- Panel Background -->
+    <rect width="580" height="570" rx="10" fill="#0b1120" stroke="#1e293b" stroke-width="2"/>
+    <text x="290" y="35" fill="#f8fafc" font-family="Arial, sans-serif" font-size="17" font-weight="bold" text-anchor="middle">
+      Geometric Tolerance Envelope
+    </text>
+
+    <!-- Center Line Reference (Player Spine Axis) -->
+    <line x1="290" y1="60" x2="290" y2="520" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,5"/>
+
+    <!-- ARM ACCEPTANCE CONES / ENVELOPES -->
+    <!-- Horizontal Shoulder Level Reference Line -->
+    <line x1="40" y1="180" x2="540" y2="180" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="4,4"/>
+
+    <!-- Left Arm Tolerance Band (+/- 9% height tolerance = ~30px up/down) -->
+    <!-- Cone showing arm angle variance from -15 deg to +15 deg -->
+    <polygon points="230,180 50,135 45,225" fill="url(#armEnvelopeGrad)"/>
+    <polygon points="350,180 530,135 535,225" fill="url(#armEnvelopeGrad)"/>
+
+    <!-- Upper & Lower Limit Arm Bounds -->
+    <!-- Right side arm limits -->
+    <line x1="230" y1="180" x2="50" y2="138" stroke="#10b981" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="230" y1="180" x2="45" y2="222" stroke="#10b981" stroke-width="2" stroke-dasharray="3,3"/>
+    <!-- Left side arm limits -->
+    <line x1="350" y1="180" x2="530" y2="138" stroke="#10b981" stroke-width="2" stroke-dasharray="3,3"/>
+    <line x1="350" y1="180" x2="535" y2="222" stroke="#10b981" stroke-width="2" stroke-dasharray="3,3"/>
+
+    <!-- Actual Player Skeleton (Ideal T-Pose) -->
+    <!-- Head -->
+    <circle cx="290" cy="110" r="24" fill="#38bdf8" stroke="#0284c7" stroke-width="3"/>
+    <circle cx="290" cy="115" r="4" fill="#0f172a"/> <!-- Nose -->
+    <circle cx="282" cy="107" r="3" fill="#0f172a"/> <!-- Left Eye -->
+    <circle cx="298" cy="107" r="3" fill="#0f172a"/> <!-- Right Eye -->
+
+    <!-- Neck & Spine -->
+    <line x1="290" y1="134" x2="290" y2="300" stroke="#f8fafc" stroke-width="6"/>
+
+    <!-- Shoulders -->
+    <line x1="230" y1="180" x2="350" y2="180" stroke="#f8fafc" stroke-width="7" stroke-linecap="round"/>
+    
+    <!-- Right Arm (Viewer Left) -->
+    <!-- Upper Arm -->
+    <line x1="230" y1="180" x2="130" y2="180" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+    <!-- Forearm -->
+    <line x1="130" y1="180" x2="45" y2="180" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- Left Arm (Viewer Right) -->
+    <!-- Upper Arm -->
+    <line x1="350" y1="180" x2="450" y2="180" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+    <!-- Forearm -->
+    <line x1="450" y1="180" x2="535" y2="180" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Hips -->
+    <line x1="250" y1="300" x2="330" y2="300" stroke="#f8fafc" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Legs (Standing Upright Envelope) -->
+    <!-- Right Leg -->
+    <line x1="250" y1="300" x2="245" y2="410" stroke="#cbd5e1" stroke-width="6" stroke-linecap="round"/>
+    <line x1="245" y1="410" x2="240" y2="510" stroke="#cbd5e1" stroke-width="6" stroke-linecap="round"/>
+    <!-- Left Leg -->
+    <line x1="330" y1="300" x2="335" y2="410" stroke="#cbd5e1" stroke-width="6" stroke-linecap="round"/>
+    <line x1="335" y1="410" x2="340" y2="510" stroke="#cbd5e1" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Joint Keypoint Dots (MoveNet Style) -->
+    <!-- Wrists -->
+    <circle cx="45" cy="180" r="7" fill="#fbbf24" stroke="#d97706" stroke-width="2"/>
+    <circle cx="535" cy="180" r="7" fill="#fbbf24" stroke="#d97706" stroke-width="2"/>
+    <!-- Elbows -->
+    <circle cx="130" cy="180" r="6" fill="#fbbf24"/>
+    <circle cx="450" cy="180" r="6" fill="#fbbf24"/>
+    <!-- Shoulders -->
+    <circle cx="230" cy="180" r="6" fill="#fbbf24"/>
+    <circle cx="350" cy="180" r="6" fill="#fbbf24"/>
+    <!-- Hips -->
+    <circle cx="250" cy="300" r="6" fill="#fbbf24"/>
+    <circle cx="330" cy="300" r="6" fill="#fbbf24"/>
+    <!-- Knees -->
+    <circle cx="245" cy="410" r="5" fill="#fbbf24"/>
+    <circle cx="335" cy="410" r="5" fill="#fbbf24"/>
+    <!-- Ankles -->
+    <circle cx="240" cy="510" r="5" fill="#fbbf24"/>
+    <circle cx="340" cy="510" r="5" fill="#fbbf24"/>
+
+    <!-- Angle Arc on Left Elbow (Showing 180 deg vs 135 deg min) -->
+    <path d="M 430,165 A 25,25 0 0,0 470,165" fill="none" stroke="#22c55e" stroke-width="2"/>
+    <text x="450" y="155" fill="#4ade80" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle">
+      ≥ 135° Straight
+    </text>
+
+    <!-- Height Tolerance Annotations -->
+    <line x1="550" y1="138" x2="550" y2="222" stroke="#f59e0b" stroke-width="2"/>
+    <line x1="545" y1="138" x2="555" y2="138" stroke="#f59e0b" stroke-width="2"/>
+    <line x1="545" y1="222" x2="555" y2="222" stroke="#f59e0b" stroke-width="2"/>
+    <text x="560" y="176" fill="#fbbf24" font-family="Arial, sans-serif" font-size="11" font-weight="bold"><tspan x="560">±0.35</tspan><tspan x="560" dy="15">SW</tspan></text>
+  </g>
+
+  <!-- ==================== RIGHT PANEL: CRITERIA BREAKDOWN ==================== -->
+  <g transform="translate(680, 110)">
+    <!-- Rules Box -->
+    <rect width="520" height="570" rx="10" fill="#0b1120" stroke="#1e293b" stroke-width="2"/>
+    <text x="260" y="35" fill="#f8fafc" font-family="Arial, sans-serif" font-size="17" font-weight="bold" text-anchor="middle">
+      T-Pose Validation Rules &amp; Rationale
+    </text>
+
+    <!-- Rule 1: Height Alignment -->
+    <g transform="translate(24, 60)">
+      <rect width="472" height="85" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#3b82f6"/>
+      <text x="28" y="34" fill="#ffffff" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">1</text>
+      <text x="54" y="26" fill="#60a5fa" font-family="Arial, sans-serif" font-size="15" font-weight="bold">Level Arms (±0.35 × Shoulder Width)</text>
+      <text x="54" y="48" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="12">
+        Elbows and wrists within 0.35 shoulder widths of the shoulder line,
+      </text>
+      <text x="54" y="68" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11">
+        measured along the player's own body axis, so camera tilt doesn't matter.
+      </text>
+    </g>
+
+    <!-- Rule 2: Arm Straightness -->
+    <g transform="translate(24, 160)">
+      <rect width="472" height="85" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#10b981"/>
+      <text x="28" y="34" fill="#ffffff" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">2</text>
+      <text x="54" y="26" fill="#34d399" font-family="Arial, sans-serif" font-size="15" font-weight="bold">Elbow Straightness (Angle ≥ 135°)</text>
+      <text x="54" y="48" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="12">
+        Shoulder → Elbow → Wrist angle must be at least 135° (near 180°).
+      </text>
+      <text x="54" y="68" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11">
+        Prevents bent-arm celebrations, clapping, or blocking hands from scoring.
+      </text>
+    </g>
+
+    <!-- Rule 3: Wingspan Ratio -->
+    <g transform="translate(24, 260)">
+      <rect width="472" height="85" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#f59e0b"/>
+      <text x="28" y="34" fill="#ffffff" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">3</text>
+      <text x="54" y="26" fill="#fbbf24" font-family="Arial, sans-serif" font-size="15" font-weight="bold">Wingspan (≥ 1.85 × Shoulder Width)</text>
+      <text x="54" y="48" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="12">
+        Wrist-to-wrist ≥ 1.85× shoulder width (1.70× at the frame edge).
+      </text>
+      <text x="54" y="68" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11">
+        Requires arms to be outspread; catches players turned sideways or holding balls.
+      </text>
+    </g>
+
+    <!-- Rule 4: Horizontal Ordering -->
+    <g transform="translate(24, 360)">
+      <rect width="472" height="85" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#8b5cf6"/>
+      <text x="28" y="34" fill="#ffffff" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">4</text>
+      <text x="54" y="26" fill="#a78bfa" font-family="Arial, sans-serif" font-size="15" font-weight="bold">Strict Horizontal Joint Order</text>
+      <text x="54" y="48" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="12">
+        R wrist &lt; R elbow &lt; R shoulder &lt; L shoulder &lt; L elbow &lt; L wrist
+      </text>
+      <text x="54" y="68" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11">
+        Guarantees player is facing camera with arms spread on their respective sides.
+      </text>
+    </g>
+
+    <!-- Rule 5: 2-Frame Confirmation -->
+    <g transform="translate(24, 460)">
+      <rect width="472" height="85" rx="6" fill="#1e293b" stroke="#ef4444" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#ef4444"/>
+      <text x="28" y="34" fill="#ffffff" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle">5</text>
+      <text x="54" y="26" fill="#f87171" font-family="Arial, sans-serif" font-size="15" font-weight="bold">Held in 2 of the Last 3 Frames</text>
+      <text x="54" y="48" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="12">
+        About 0.3 to 0.6 s at ~2.9 fps; one flickery frame does not reset the hold.
+      </text>
+      <text x="54" y="68" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11">
+        The side re-arms only after the pose is released (one hold = one point).
+      </text>
+    </g>
+  </g>
+</svg>

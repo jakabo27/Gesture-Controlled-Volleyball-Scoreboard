@@ -1,0 +1,13 @@
+# Everything that runs on the Raspberry Pi keeps Linux line endings, so a checkout on
+# Windows is byte-identical to what is deployed (and systemd units still parse).
+pi/**           text eol=lf
+legacy/**       text eol=lf
+tools/**/*.py   text eol=lf
+*.sh            text eol=lf
+
+# Binary assets
+*.tflite        binary
+*.jpg           binary
+*.png           binary
+*.webp          binary
+*.gif           binary

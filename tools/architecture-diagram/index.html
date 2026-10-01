@@ -1,0 +1,301 @@
+<!doctype html>
+<!--
+  Source for media/diagrams/architecture-{light,dark}.svg (same tooling as the
+  DRV8262 gate controller repo).
+
+  Hand-drawn boxes and arrows come from rough.js. Text is set in Patrick Hand and
+  Architects Daughter (both SIL Open Font License, fetched from the Google Fonts
+  repo) and converted to outlines with opentype.js, so the SVG looks the same
+  everywhere without needing the fonts installed.
+
+  To re-render: python server.py 8766, open http://localhost:8766/, and both
+  SVGs are written to out/. Copy them to media/diagrams/.
+-->
+<html><head><meta charset="utf-8"><title>arch diagram</title>
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<style>body{margin:0;background:#777;font-family:sans-serif} svg{display:block;margin:12px auto} #status{color:#fff;padding:6px}</style>
+</head><body>
+<div id="status">loading…</div>
+<div id="host"></div>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const FONT_URLS = {
+  hand: ['https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/patrickhand/PatrickHand-Regular.ttf',
+         'https://raw.githubusercontent.com/google/fonts/main/ofl/patrickhand/PatrickHand-Regular.ttf'],
+  head: ['https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/architectsdaughter/ArchitectsDaughter-Regular.ttf',
+         'https://raw.githubusercontent.com/google/fonts/main/ofl/architectsdaughter/ArchitectsDaughter-Regular.ttf'],
+};
+async function loadFont(urls) {
+  for (const u of urls) {
+    try { const r = await fetch(u); if (!r.ok) continue; return opentype.parse(await r.arrayBuffer()); } catch (e) {}
+  }
+  throw new Error('font failed: ' + urls[0]);
+}
+
+const THEMES = {
+  light: {paper:'#fbfaf6', ink:'#2b2b2b', muted:'#66655f', teal:'#4fa9a6', orange:'#ee9a45', rose:'#c85f7c',
+          gray:'#a3a39c', box:'#ffffff', hach:0.55, mark:0.45},
+  dark:  {paper:'#1c1c1b', ink:'#ecebe6', muted:'#b4b3ac', teal:'#4fa3a0', orange:'#dd8d3d', rose:'#d27089',
+          gray:'#8b8b85', box:'#262625', hach:0.40, mark:0.55},
+};
+
+const W = 920, H = 1100;
+let fonts, svg, rc, C, seed;
+const S = () => ++seed;
+
+function add(node, opacity) { if (opacity != null) node.setAttribute('opacity', opacity); svg.appendChild(node); return node; }
+
+function text(str, x, y, o = {}) {
+  const f = fonts[o.font || 'hand'], size = o.size || 21;
+  const w = f.getAdvanceWidth(str, size);
+  const x0 = o.anchor === 'middle' ? x - w / 2 : o.anchor === 'end' ? x - w : x;
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', f.getPath(str, x0, y, size).toPathData(1));
+  p.setAttribute('fill', o.color || C.ink);
+  svg.appendChild(p);
+  return {x0, w};
+}
+
+// marker highlight behind a piece of text (drawn first, text drawn after)
+function highlight(x, y, w, h, color, op) {
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.4, stroke:'none', fill:color, fillStyle:'solid'}), op ?? C.mark);
+}
+
+function box(x, y, w, h, stripe) {
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.1, bowing:1.2, stroke:C.ink, strokeWidth:1.8, fill:C.box, fillStyle:'solid'}));
+  if (stripe) highlight(x + 6, y + h - 13, w - 12, 8, stripe);
+}
+
+function headingPatch(str, x, y, size) {
+  const w = fonts.head.getAdvanceWidth(str, size);
+  add(rc.rectangle(x - 8, y - size - 2, w + 16, size + 12, {seed:S(), roughness:0.9, stroke:'none', fill:C.paper, fillStyle:'solid'}));
+  text(str, x, y, {font:'head', size});
+  return w;
+}
+function note(str, x, y) {
+  const w = fonts.hand.getAdvanceWidth(str, 19.5);
+  add(rc.rectangle(x - 6, y - 19, w + 12, 26, {seed:S(), roughness:0.9, stroke:'none', fill:C.paper, fillStyle:'solid'}));
+  highlight(x - 6, y - 18, w + 12, 24, C.rose, C.mark * 0.7);
+  text(str, x, y, {size:19.5});
+}
+function container(x, y, w, h, color) {
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.3, stroke:'none', fill:color, fillStyle:'hachure',
+                               hachureGap:10, fillWeight:1.3, hachureAngle:-41}), C.hach);
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.4, bowing:1.5, stroke:C.ink, strokeWidth:2.2}));
+}
+
+function head(x, y, ang) {
+  const L = 13, a = 0.47;
+  add(rc.linearPath([[x - L * Math.cos(ang - a), y - L * Math.sin(ang - a)], [x, y],
+                     [x - L * Math.cos(ang + a), y - L * Math.sin(ang + a)]],
+                    {seed:S(), roughness:0.7, stroke:C.ink, strokeWidth:1.9}));
+}
+
+function arrow(x1, y1, x2, y2, o = {}) {
+  if (o.dash) {
+    add(rc.line(x1, y1, x2, y2, {seed:S(), roughness:0.8, stroke:C.ink, strokeWidth:1.8, strokeLineDash:[9, 7]}));
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    head(x2, y2, ang);
+    if (o.both) head(x1, y1, ang + Math.PI);
+    return;
+  }
+  if (o.ctrl) {
+    const [cx, cy] = o.ctrl;
+    add(rc.path(`M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, {seed:S(), roughness:0.8, stroke:C.ink, strokeWidth:1.8}));
+    head(x2, y2, Math.atan2(y2 - cy, x2 - cx));
+    if (o.both) head(x1, y1, Math.atan2(y1 - cy, x1 - cx));
+  } else {
+    add(rc.line(x1, y1, x2, y2, {seed:S(), roughness:0.8, stroke:C.ink, strokeWidth:1.8}));
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    head(x2, y2, ang);
+    if (o.both) head(x1, y1, ang + Math.PI);
+  }
+}
+
+// ---- small icons ---------------------------------------------------------
+const ln = {roughness:0.9, stroke:null, strokeWidth:1.6};
+function st(extra) { return Object.assign({seed:S(), roughness:0.9, stroke:C.ink, strokeWidth:1.6}, extra || {}); }
+function iconLaptop(x, y) {
+  add(rc.rectangle(x, y, 34, 22, st({fill:C.teal, fillStyle:'hachure', hachureGap:5})));
+  add(rc.linearPath([[x - 6, y + 27], [x + 40, y + 27]], st()));
+  add(rc.rectangle(x + 44, y + 2, 13, 25, st({fill:C.box, fillStyle:'solid'})));
+}
+function iconHouse(x, y) {
+  add(rc.polygon([[x, y + 15], [x + 18, y], [x + 36, y + 15]], st()));
+  add(rc.rectangle(x + 6, y + 15, 24, 17, st({fill:C.teal, fillStyle:'hachure', hachureGap:5})));
+}
+function iconChip(x, y) {
+  add(rc.rectangle(x, y, 26, 26, st({fill:C.rose, fillStyle:'hachure', hachureGap:4})));
+  for (let i = 0; i < 3; i++) {
+    const o = 6 + i * 7;
+    add(rc.line(x - 7, y + o, x, y + o, st({strokeWidth:1.3})));
+    add(rc.line(x + 26, y + o, x + 33, y + o, st({strokeWidth:1.3})));
+  }
+}
+function iconGate(x, y) {
+  add(rc.rectangle(x, y, 44, 28, st()));
+  for (let i = 1; i < 4; i++) add(rc.line(x + i * 11, y, x + i * 11, y + 28, st({strokeWidth:1.3})));
+  add(rc.line(x, y + 28, x + 44, y, st({strokeWidth:1.3})));
+}
+function iconBattery(x, y) {
+  add(rc.rectangle(x, y, 40, 22, st({fill:C.rose, fillStyle:'hachure', hachureGap:5})));
+  add(rc.rectangle(x + 40, y + 7, 5, 8, st({fill:C.ink, fillStyle:'solid'})));
+}
+function cylinder(cx, top, w, bodyH) {
+  const rx = w / 2, ry = 10;
+  add(rc.rectangle(cx - rx, top, w, bodyH, {seed:S(), roughness:0.6, stroke:'none', fill:C.box, fillStyle:'solid'}));
+  add(rc.ellipse(cx, top + bodyH, w, ry * 2, st({fill:C.box, fillStyle:'solid', strokeWidth:1.8})));
+  add(rc.rectangle(cx - rx + 2, top, w - 4, bodyH, {seed:S(), roughness:0.6, stroke:'none', fill:C.box, fillStyle:'solid'}));
+  add(rc.line(cx - rx, top, cx - rx, top + bodyH, st({strokeWidth:1.8})));
+  add(rc.line(cx + rx, top, cx + rx, top + bodyH, st({strokeWidth:1.8})));
+  add(rc.ellipse(cx, top, w, ry * 2, st({fill:C.gray, fillStyle:'hachure', hachureGap:5, strokeWidth:1.8})));
+}
+
+// two-line centered label inside a box
+function label(cx, y, title, sub, sub2) {
+  text(title, cx, y, {size:23, anchor:'middle'});
+  if (sub) text(sub, cx, y + 26, {size:18.5, anchor:'middle', color:C.muted});
+  if (sub2) text(sub2, cx, y + 48, {size:18.5, anchor:'middle', color:C.muted});
+}
+
+function iconCamera(x, y) {
+  add(rc.rectangle(x, y, 42, 28, st({fill:C.teal, fillStyle:'hachure', hachureGap:5})));
+  add(rc.circle(x + 21, y + 14, 17, st({fill:C.box, fillStyle:'solid'})));
+  add(rc.circle(x + 21, y + 14, 6, st({fill:C.ink, fillStyle:'solid'})));
+  add(rc.linearPath([[x + 21, y + 28], [x + 21, y + 36], [x + 10, y + 40], [x + 32, y + 40]], st()));
+}
+function iconPhone(x, y) {
+  add(rc.rectangle(x, y, 26, 44, st({fill:C.box, fillStyle:'solid'})));
+  add(rc.rectangle(x + 4, y + 5, 18, 28, st({fill:C.teal, fillStyle:'hachure', hachureGap:4})));
+  add(rc.circle(x + 13, y + 38, 4, st()));
+}
+function iconDigit(x, y) {
+  // a little seven-segment "8": the two loops plus the middle bar
+  const w = 24, h = 42, m = y + h / 2;
+  add(rc.rectangle(x, y, w, h, st({strokeWidth:3.2, stroke:C.rose})));
+  add(rc.line(x, m, x + w, m, st({strokeWidth:3.2, stroke:C.rose})));
+}
+function iconSpeaker(x, y) {
+  add(rc.polygon([[x, y + 12], [x + 10, y + 12], [x + 22, y], [x + 22, y + 40], [x + 10, y + 28], [x, y + 28]],
+                 st({fill:C.rose, fillStyle:'hachure', hachureGap:4})));
+  add(rc.arc(x + 24, y + 20, 18, 22, -1.1, 1.1, false, st()));
+  add(rc.arc(x + 24, y + 20, 32, 36, -1.1, 1.1, false, st()));
+}
+
+function draw(theme) {
+  C = THEMES[theme]; seed = 0;
+  svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('role', 'img');
+  const title = document.createElementNS(NS, 'title');
+  title.textContent = 'How the gesture-controlled volleyball scoreboard fits together';
+  const desc = document.createElementNS(NS, 'desc');
+  desc.textContent = 'A wide-angle USB camera streams MJPG frames to a Raspberry Pi 4. The Pi runs MoveNet MultiPose on two overlapping half-frames ' +
+    '(up to 12 players), checks each player for a T-pose (+1) or a hands-on-head cobra (-1), and recovers on its own from camera and software faults. ' +
+    'It signals an Arduino Mega 2560 over 3.3V GPIO pulses (+1 and -1 per team) plus a 1 second heartbeat. The Arduino owns the score and works with no Pi: ' +
+    'it reads the manual buttons and slide pots, drives 252 WS2812B LEDs that form four seven-segment digits, and plays WAV sound effects from an SD card. ' +
+    'A Ryobi 18V tool battery, fused and stepped down to 5V, powers everything. A Bluetooth LE phone display is the next planned step.';
+  svg.append(title, desc);
+  rc = rough.svg(svg);
+
+  add(rc.rectangle(0, 0, W, H, {seed:S(), roughness:0, stroke:'none', fill:C.paper, fillStyle:'solid'}));
+
+  // title
+  const t = fonts.head.getAdvanceWidth('HOW IT FITS TOGETHER', 30);
+  highlight(38, 44, t + 8, 14, C.rose, C.mark * 0.8);
+  text('HOW IT FITS TOGETHER', 42, 56, {font:'head', size:30});
+
+  // ---- row A: camera and the planned phone display ---------------------------
+  box(45, 92, 280, 86, C.gray);
+  iconCamera(62, 110);
+  text('USB camera', 124, 128, {size:23});
+  text('wide-angle, 1280x720', 124, 154, {size:18.5, color:C.muted});
+
+  add(rc.rectangle(595, 92, 280, 86, {seed:S(), roughness:1.1, bowing:1.2, stroke:C.muted, strokeWidth:1.8,
+                                       strokeLineDash:[9, 7], fill:C.box, fillStyle:'solid'}));
+  iconPhone(616, 113);
+  text('Phone display', 660, 128, {size:23});
+  text('planned: Bluetooth LE', 660, 154, {size:18.5, color:C.muted});
+
+  arrow(185, 178, 185, 318);
+  text('MJPG frames', 199, 240, {size:18.5, color:C.muted});
+  text('over USB', 199, 262, {size:18.5, color:C.muted});
+  arrow(735, 318, 735, 180, {dash:true});
+  text('live score', 749, 240, {size:18.5, color:C.muted});
+  text('(next step)', 749, 262, {size:18.5, color:C.muted});
+
+  // ---- Raspberry Pi ------------------------------------------------------------
+  container(36, 318, 848, 222, C.teal);
+  const h1 = headingPatch('RASPBERRY PI 4 VISION', 58, 356, 24);
+  note('optional: scoring works without it', 58 + h1 + 34, 356);
+
+  box(60, 378, 250, 86, C.teal);   label(185, 412, 'Pose estimation', 'MoveNet MultiPose');
+  box(335, 378, 250, 86, C.teal);  label(460, 412, 'Gesture rules', 'T-pose +1, cobra -1');
+  box(610, 378, 250, 86, C.teal);  label(735, 412, 'Self-healing', 'watchdogs, reconnects');
+  box(60, 484, 800, 38);
+  text('two overlapping half-frames track up to 12 players, OLED aim assist, field logging', 460, 509,
+       {size:18.5, anchor:'middle', color:C.muted});
+
+  // ---- GPIO link ---------------------------------------------------------------
+  arrow(460, 540, 460, 614);
+  text('GPIO pulses, 3.3V', 476, 574, {size:20});
+  text('+1 / -1 per team, 1s heartbeat', 476, 597, {size:17, color:C.muted});
+
+  // ---- Arduino -----------------------------------------------------------------
+  container(36, 614, 848, 178, C.orange);
+  const h2 = headingPatch('ARDUINO MEGA 2560', 58, 652, 24);
+  note('in charge: works with no Pi', 58 + h2 + 34, 652);
+
+  box(60, 674, 250, 90, C.orange);   label(185, 708, 'Score logic', 'to 15/21/25, win by 2');
+  box(335, 674, 250, 90, C.orange);  label(460, 708, 'LED driver', '252 WS2812B, FastLED');
+  box(610, 674, 250, 90, C.orange);  label(735, 708, 'Sound effects', 'WAV clips from SD card');
+
+  // ---- hardware row ------------------------------------------------------------
+  box(60, 858, 250, 108, C.gray);
+  label(185, 890, 'Manual controls', 'buttons, slide pots,', '16x2 LCD');
+  box(335, 858, 250, 108, C.rose);
+  iconDigit(358, 884);
+  text('Seven-segment', 400, 894, {size:23});
+  text('digits', 400, 918, {size:23});
+  text('4 x 63 LEDs', 400, 944, {size:18.5, color:C.muted});
+  box(610, 858, 250, 108, C.rose);
+  iconSpeaker(628, 888);
+  text('Speaker', 690, 900, {size:23});
+  text('8-bit PWM audio', 690, 926, {size:18.5, color:C.muted});
+
+  arrow(185, 858, 185, 766);
+  arrow(460, 766, 460, 856);
+  arrow(735, 766, 735, 856);
+
+  // power
+  arrow(460, 1010, 460, 968);
+  iconBattery(330, 1030);
+  text('Ryobi 18V tool battery', 392, 1046, {size:23});
+  text('fused, stepped down to 5V, powers everything', 392, 1072, {size:18.5, color:C.muted});
+
+  document.getElementById('host').appendChild(svg);
+  return svg;
+}
+
+(async () => {
+  try {
+    fonts = {hand: await loadFont(FONT_URLS.hand), head: await loadFont(FONT_URLS.head)};
+    const results = [];
+    for (const theme of ['light', 'dark']) {
+      const el = draw(theme);
+      const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(el);
+      const r = await fetch('/save?name=architecture-' + theme + '.svg', {method:'POST', body:xml});
+      results.push(theme + ': ' + (await r.text()));
+    }
+    document.getElementById('status').textContent = 'done - ' + results.join(' | ');
+    window.__done = results;
+  } catch (e) {
+    document.getElementById('status').textContent = 'ERROR ' + e;
+    window.__done = 'ERROR ' + e;
+  }
+})();
+</script>
+</body></html>
