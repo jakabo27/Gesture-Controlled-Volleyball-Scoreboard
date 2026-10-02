@@ -9,6 +9,11 @@ This service keeps the latest valid line and publishes it as a BLE GATT characte
 Web Bluetooth page in web/. It is separate from the vision engine on purpose: nothing here can affect scoring,
 and the Arduino never waits for it.
 
+The page can also change two settings (sport mode, volleyball game-to) by writing to the command characteristic.
+Only whitelisted commands are forwarded to the Arduino, as checksummed lines on the same UART:
+
+    $C,MODE,<0|1>*<XOR>        $C,TO,<15|21|25>*<XOR>
+
 BLE uses BlueZ's D-Bus API (BlueZ 5.50 on Raspbian Buster) through python3-dbus and python3-gi, so it needs no
 pip packages. Bluetooth is started ~20 s after boot by scoreboard-bt.timer; until bluetoothd appears (and after
 it restarts) the service keeps reading the UART and retries the BLE registration every few seconds.
@@ -18,10 +23,12 @@ Usage:
     python3 scoreboard_link.py --stdin --no-ble    # parse lines from stdin and print packets (desktop testing)
 Environment:
     SCOREBOARD_LINK_PORT   serial device (default /dev/ttyAMA1 = PL011 UART2 on GPIO 0/1, dtoverlay=uart2)
+    SCOREBOARD_BLE_SECURE  1 = require an encrypted (paired) link to write commands
 """
 
 import argparse
 import os
+import re
 import struct
 import sys
 import threading
@@ -33,6 +40,11 @@ LINK_BAUD = 38400
 BLE_NAME = 'Scoreboard'                                   # advertised name; the page filters on it
 SERVICE_UUID = 'b3710001-1a78-4239-800f-cf4fa9544bbe'
 STATE_CHAR_UUID = 'b3710002-1a78-4239-800f-cf4fa9544bbe'  # read + notify, PACKET_FORMAT below
+COMMAND_CHAR_UUID = 'b3710003-1a78-4239-800f-cf4fa9544bbe'  # write: ASCII command, COMMAND_RE below
+SECURE_WRITES = os.environ.get('SCOREBOARD_BLE_SECURE', '0') == '1'
+
+# The only commands the phone may send (sport mode, volleyball game-to). Scores are not remote-controllable yet.
+COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25))$')
 
 FRESH_SECONDS = 3.0          # Arduino data older than this is flagged stale (it sends at least once a second)
 KEEPALIVE_SECONDS = 2.0      # notify at least this often so the phone can tell a dead link from a quiet game
@@ -95,6 +107,18 @@ def parse_state_line(line):
     }
 
 
+def build_command(text):
+    """'TO,25' -> '$C,TO,25*XX\r\n' for the Arduino, or None if the command is not allowed."""
+    text = text.strip()
+    if not COMMAND_RE.match(text):
+        return None
+    body = 'C,' + text
+    checksum = 0
+    for ch in body:
+        checksum ^= ord(ch)
+    return '$%s*%02X' % (body, checksum) + chr(13) + chr(10)
+
+
 def pack_state(state, age_s):
     """Pack a parsed state (or None = nothing received yet) into the BLE packet."""
     if state is None:
@@ -128,6 +152,23 @@ class LinkState:
         self.received_at = None
         self.lines_ok = 0
         self.lines_bad = 0
+        self.serial = None   # the open UART, for commands to the Arduino
+
+    def send_command(self, text):
+        """Forward a whitelisted command to the Arduino. Returns an error string, or None on success."""
+        line = build_command(text)
+        if line is None:
+            return 'command not allowed: %r' % text
+        with self._lock:
+            ser = self.serial
+        if ser is None:
+            return 'UART not open'
+        try:
+            ser.write(line.encode('ascii'))
+        except Exception as e:
+            return 'UART write failed: %s' % e
+        log('command to Arduino: %s' % line.strip())
+        return None
 
     def update(self, state):
         with self._lock:
@@ -158,8 +199,9 @@ def serial_reader(link, port):
     import serial
     while True:
         try:
-            with serial.Serial(port, LINK_BAUD, timeout=1.0) as ser:
+            with serial.Serial(port, LINK_BAUD, timeout=1.0, write_timeout=0.5) as ser:
                 log('UART open: %s @ %d' % (port, LINK_BAUD))
+                link.serial = ser
                 while True:
                     raw = ser.readline()
                     if not raw.strip():
@@ -170,6 +212,7 @@ def serial_reader(link, port):
                     else:
                         link.update(state)
         except Exception as e:  # unplugged / not configured yet: keep trying, never exit
+            link.serial = None
             log('UART %s: %s (retrying in 5 s)' % (port, e))
             time.sleep(5)
 
@@ -210,6 +253,9 @@ def run_ble(link):
 
     class InvalidArgs(dbus.exceptions.DBusException):
         _dbus_error_name = 'org.freedesktop.DBus.Error.InvalidArgs'
+
+    class Failed(dbus.exceptions.DBusException):
+        _dbus_error_name = 'org.bluez.Error.Failed'
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
@@ -291,6 +337,32 @@ def run_ble(link):
             if self.notifying:
                 self.PropertiesChanged(GATT_CHRC_IFACE, {'Value': dbus.Array(value, signature='y')}, [])
 
+    class CommandCharacteristic(dbus.service.Object):
+        def __init__(self, service):
+            self.path = service.path + '/char1'
+            self.service = service
+            dbus.service.Object.__init__(self, bus, self.path)
+
+        def properties(self):
+            flags = ['encrypt-write'] if SECURE_WRITES else ['write']
+            return {GATT_CHRC_IFACE: {
+                'Service': self.service.path, 'UUID': COMMAND_CHAR_UUID,
+                'Flags': dbus.Array(flags, signature='s')}}
+
+        @dbus.service.method(PROP_IFACE, in_signature='s', out_signature='a{sv}')
+        def GetAll(self, interface):
+            if interface != GATT_CHRC_IFACE:
+                raise InvalidArgs()
+            return self.properties()[GATT_CHRC_IFACE]
+
+        @dbus.service.method(GATT_CHRC_IFACE, in_signature='aya{sv}')
+        def WriteValue(self, value, options):
+            text = bytes(value).decode('ascii', errors='replace')
+            error = link.send_command(text)
+            if error:
+                log('phone command rejected: %s' % error)
+                raise Failed(error)
+
     class Advertisement(dbus.service.Object):
         def __init__(self):
             self.path = APP_PATH + '/advertisement0'
@@ -316,6 +388,7 @@ def run_ble(link):
     service = Service(0, SERVICE_UUID)
     chrc = StateCharacteristic(service)
     service.characteristics.append(chrc)
+    service.characteristics.append(CommandCharacteristic(service))
     app.services.append(service)
     adv = Advertisement()
 

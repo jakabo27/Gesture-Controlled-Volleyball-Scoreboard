@@ -5,6 +5,7 @@
 
   const SERVICE_UUID = 'b3710001-1a78-4239-800f-cf4fa9544bbe';
   const STATE_CHAR_UUID = 'b3710002-1a78-4239-800f-cf4fa9544bbe';
+  const COMMAND_CHAR_UUID = 'b3710003-1a78-4239-800f-cf4fa9544bbe';
   const DEVICE_NAME = 'Scoreboard';
 
   const COLOR_WHITE = 256;
@@ -31,6 +32,13 @@
     [1, 0, 0, 0, 0, 1, 1], // 14 = u
     [1, 0, 0, 0, 1, 0, 1], // 15 = c
   ];
+
+  // Settings the phone may change (the Pi forwards only these): sport mode and volleyball game-to.
+  const COMMANDS = { MODE: [0, 1], TO: [15, 21, 25] };
+  function commandText(name, value) {
+    if (!COMMANDS[name] || !COMMANDS[name].includes(value)) throw new Error('not allowed: ' + name + ' ' + value);
+    return `${name},${value}`;
+  }
 
   // Decode the 17-byte state packet (DataView or Uint8Array).
   function decodeState(data) {
@@ -100,7 +108,7 @@
   }
 
   const api = {
-    SERVICE_UUID, STATE_CHAR_UUID, DEVICE_NAME, COLOR_WHITE, COLOR_RAINBOW, EVENTS, DIGIT_TABLE,
+    SERVICE_UUID, STATE_CHAR_UUID, COMMAND_CHAR_UUID, COMMANDS, commandText, DEVICE_NAME, COLOR_WHITE, COLOR_RAINBOW, EVENTS, DIGIT_TABLE,
     decodeState, rainbowHue, rainbowPixelHue, ledColor,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

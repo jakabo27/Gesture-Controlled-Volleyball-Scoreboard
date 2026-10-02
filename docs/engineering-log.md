@@ -542,3 +542,48 @@ The WAV gaps were already digital silence; the audible hiss came from the voice 
 **Found while doing this:** the old wiring diagram's Pi header drawing was missing a row (19 rows instead of 20), so the OLED pin labels sat one row high. It was redrawn to scale with every pin numbered, plus the Mega's communication header (pins 14–21).
 
 **Repo:** github.com/jakabo27/Gesture-Controlled-Volleyball-Scoreboard. `main` = known-good state (tag `v1.0-pre-ble`), branch `phone-display` = this work.
+
+---
+
+## 31. Button Chords, Non-Blocking Celebration, Phone Settings, Loudness (Oct 1 2026, built, not yet flashed)
+
+All in the repo's `phone-display` branch. The firmware compiles with no warnings: 35,648 bytes flash, 4,268 bytes RAM, 3,924 bytes free.
+
+**Button chords, rewritten.** Why they were unreliable:
+* The first button of a chord scored on its own.
+* Recognition was one fixed `delay(400)`, so a slow third or fourth finger turned a 4-chord into a 2-chord.
+* After a chord, the code waited for release and then fell through the 3- and 2-button states, so releasing a 4-chord could toggle sound mode or the game-to score, or add points.
+* A sport change didn't re-arm `gameWonFirstTime`, so the next game never celebrated.
+
+Now:
+* A single press acts instantly.
+* If more buttons join within 1.5s, that press is undone (score and win state restored).
+* The chord fires **while held**: at once with all 4, or 0.35s after the last button joins for 2 or 3 (`CHORD_SETTLE_MS`), and it announces then.
+* All score buttons are then ignored until every one is released.
+* Shared functions `setSportMode()`, `setScoreTo()` and `toggleSoundMode()` serve both the chords and the phone. A sport change re-arms the celebration.
+
+**Celebration song, now non-blocking.**
+* The old code blocked twice: it waited for the point sound to finish, then for the whole song (Champ.wav ~15s, allWin.wav ~12s). Without an SD card, the buzzer melodies were `delay()` loops.
+* Now the WAV is queued and starts when the point sound ends (`serviceAudio()`), and the melodies are a note-by-note state machine.
+* Any score button, Reset or cobra calls `stopCelebration()` first, so fixing an accidental winning point is one press on −.
+* A Pi T-pose point doesn't cut the song off (it skips its own sound while the song plays).
+* The `justPlayedWinningTune` heartbeat workaround was removed, because nothing blocks the loop any more. The only delays left are the boot sound and a 0.3s beep sweep.
+
+**Phone settings.** The Settings dialog on the page now starts with Sport (volleyball / tennis, with a confirmation because it resets the score) and Game to (15 / 21 / 25).
+* Path: page → BLE command characteristic `b3710003-…` → the Pi forwards only whitelisted `MODE,0|1` / `TO,15|21|25` as `$C,<cmd>*<XOR>` → Arduino `serviceSerialCommands()` (non-blocking, checksum-checked).
+* The new values come back in the state line, so the buttons always show what the scoreboard really has, including chord changes.
+* `SCOREBOARD_BLE_SECURE=1` makes writes require pairing. Turn it on before adding score control.
+* Tests cover the command whitelist on the Pi, the page and the sketch.
+
+**WAV files.** Yes, they were improved earlier (Section 27, `SD_card_cleaned/`), but they still have to be **copied onto the SD card**. New: `python clean_wavs.py --loud` writes `SD_card_loud/`. It uses look-ahead compression (sliding-max envelope ±3ms, 4:1 above −16dB of the peak, 60ms release) and then the same 120/127 peak.
+* Loudness vs the plain cleaned set: voice announcements **+1.6 to +5.9 dB**, music +1.4 to +3.8, short effects +0.2 to +2.5.
+* All 30 files verified: 16kHz, 8-bit mono, 44-byte header, peak ≤ 120.
+* (A first version without look-ahead made the short effects *quieter*, because the attack let transients through.)
+
+**Why the speaker was quiet (firmware side):**
+* TMRpcm with `quality(1)` at 16kHz has a 500-step PWM range, and `setVolume(5)` doubles each 8-bit sample to 0–510. A full-scale clip already fills it, and `setVolume(6)` would clip. So the firmware was never the limit.
+* The **clips** were: the originals peak at only 26–47% of full scale.
+* Unused bonus: TMRpcm drives an inverted copy on **pin 2** (OC3B). With a differential-input amp, wiring IN+ to pin 5 and IN− to pin 2 (`BRIDGED_AUDIO 1`) gives +6 dB.
+* Worth checking on the hardware:
+  * the amp's gain pot and supply voltage (12V vs 5V),
+  * an RC low-pass (~1k + 10nF) before the amp input, so the 32kHz carrier doesn't eat amp headroom.

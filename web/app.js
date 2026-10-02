@@ -5,7 +5,7 @@
 (() => {
   'use strict';
   const P = window.ScoreboardProtocol;
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const NS = 'http://www.w3.org/2000/svg';
   const $ = (sel) => document.querySelector(sel);
 
@@ -197,7 +197,43 @@
       gp.className = 'pill ' + (state.piOn ? 'ok' : 'pill-quiet');
       gp.querySelector('.pill-text').textContent = state.piOn ? 'Gestures on' : 'Gestures off';
     }
+    syncBoardSettings();
   }
+
+  // ---- scoreboard settings: sport and volleyball game-to, sent to the Arduino through the Pi --------------
+  let boardNote = '';
+  function syncBoardSettings() {
+    const canSend = demo || (connected && !!commandChar);
+    document.querySelectorAll('#board-settings [data-cmd]').forEach((btn) => {
+      const name = btn.dataset.cmd, value = Number(btn.dataset.value);
+      const current = !state ? null : name === 'MODE' ? state.mode : state.scoreTo;
+      btn.classList.toggle('on', current === value);
+      btn.disabled = !canSend || (name === 'TO' && state && state.mode === 1);
+    });
+    $('#board-settings-note').textContent = boardNote ||
+      (canSend ? '(changes the scoreboard)' : connected ? '(update the Pi service to change these)' : '(connect to change)');
+  }
+
+  async function sendBoardSetting(btn) {
+    const name = btn.dataset.cmd, value = Number(btn.dataset.value);
+    if (state && (name === 'MODE' ? state.mode : state.scoreTo) === value) return;
+    if (name === 'MODE' && !confirm(`Switch the scoreboard to ${value ? 'tennis' : 'volleyball'}? This resets the score to 0–0.`)) return;
+    const text = P.commandText(name, value);
+    if (demo) { applyDemoCommand(name, value); return; }
+    if (!connected || !commandChar) return;
+    btn.classList.add('sending');
+    try {
+      await commandChar.writeValueWithResponse(new TextEncoder().encode(text));
+      boardNote = '';   // the scoreboard's own state update confirms it
+    } catch (e) {
+      boardNote = '(not sent: ' + e.message + ')';
+    } finally {
+      btn.classList.remove('sending');
+      syncBoardSettings();
+    }
+  }
+  document.querySelectorAll('#board-settings [data-cmd]').forEach((btn) =>
+    btn.addEventListener('click', () => sendBoardSetting(btn)));
 
   const EVENT_TEXT = {
     HU: ['home', '+1', 'button'], HD: ['home', '−1', 'button'],
@@ -269,6 +305,7 @@
 
   // ---- Web Bluetooth ------------------------------------------------------------------------------------------
   let device = null;
+  let commandChar = null;   // write: sport / game-to settings (absent on an older Pi service)
   let connected = false;
   let connecting = false;
   let wantConnection = false;
@@ -315,6 +352,7 @@
       const chrc = await service.getCharacteristic(P.STATE_CHAR_UUID);
       chrc.addEventListener('characteristicvaluechanged', onValueChanged); // same function: never added twice
       await chrc.startNotifications();
+      try { commandChar = await service.getCharacteristic(P.COMMAND_CHAR_UUID); } catch (_) { commandChar = null; }
       lastEventSeq = null;     // don't replay the last event as if it just happened
       onPacket(await chrc.readValue());
       connected = true;
@@ -347,6 +385,7 @@
 
   function onDisconnected() {
     connected = false;
+    commandChar = null;
     if (wantConnection) scheduleReconnect();
     else setLink('Not connected', 'bad');
   }
@@ -432,6 +471,10 @@
     requestWakeLock();
   }
   function stopDemo() { demo = false; clearInterval(demoTimer); }
+  function applyDemoCommand(name, value) {
+    if (name === 'MODE') { demoState.mode = value; demoState.home = demoState.away = 0; demoPublish('MD'); }
+    else { demoState.scoreTo = value; demoPublish('GT'); }
+  }
 
   // ---- screen wake lock ---------------------------------------------------------------------------------
   let wakeLock = null;
@@ -458,6 +501,8 @@
     form.theme.value = settings.theme;
     form.colorStyle.value = settings.colorStyle;
     form.wakeLock.checked = settings.wakeLock;
+    boardNote = '';
+    syncBoardSettings();
     $('#btn-disconnect').hidden = !(connected || demo || wantConnection);
   }
   form.addEventListener('change', () => {

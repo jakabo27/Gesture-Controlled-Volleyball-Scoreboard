@@ -10,16 +10,24 @@ Arduino's PWM/amplifier hiss are loud relative to the speech. For every file thi
   4. normalizes the peak to TARGET_PEAK so every clip plays at the same, louder level.
 Originals are never modified; cleaned files (same 8.3 names) go to SD_card_cleaned/.
 
-Usage:  python clean_wavs.py
+--loud additionally compresses each clip before normalizing (fast envelope, 4:1 above -16 dB of the peak), so
+the quiet parts of every word come up while the peaks stay at the same no-clip ceiling. Same peak, roughly
++3 to +5 dB more average level: noticeably louder through the same amplifier. Output: SD_card_loud/.
+The Arduino can't go louder digitally: at setVolume(5) a peak of 120 already drives the PWM to ~97%.
+
+Usage:  python clean_wavs.py [--loud] [folder with the original WAVs]   (default: this script's folder)
 """
 import glob
 import os
+import sys
 import wave
 
 import numpy as np
 
-SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR = os.path.join(SRC_DIR, 'SD_card_cleaned')
+LOUD = '--loud' in sys.argv
+_args = [a for a in sys.argv[1:] if not a.startswith('--')]
+SRC_DIR = os.path.abspath(_args[0]) if _args else os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(SRC_DIR, 'SD_card_loud' if LOUD else 'SD_card_cleaned')
 TARGET_PEAK = 120.0            # of 127 (about -0.5 dBFS): headroom for TMRpcm's 2x oversampling
 KEEP_TAILS = {'Boot.wav', 'Champ.wav', 'allWin.wav'}   # music / jingles: don't trim their endings
 FRAME = 512                    # STFT size (32 ms at 16 kHz)
@@ -79,6 +87,30 @@ def gate_and_trim(sr, x, keep_tail):
     return x[first:last]
 
 
+def compress(sr, x, threshold_db=-16.0, ratio=4.0, lookahead_ms=3.0, release_ms=60.0):
+    """Look-ahead peak compressor: gain reduction above threshold_db (relative to the clip's peak).
+    The envelope is the sliding maximum over +-lookahead_ms (so the gain is already down when a transient
+    arrives, and the envelope is never below the signal), released smoothly afterwards."""
+    a = np.abs(x)
+    peak = max(a.max(), 1e-9)
+    thr = peak * 10 ** (threshold_db / 20.0)
+    L = max(1, int(sr * lookahead_ms / 1000.0))
+    held = np.lib.stride_tricks.sliding_window_view(np.pad(a, (L, L)), 2 * L + 1).max(axis=1)
+    a_rel = np.exp(-1.0 / (sr * release_ms / 1000.0))
+    env = np.empty_like(held)
+    e = 0.0
+    for i, v in enumerate(held):
+        e = v if v > e else a_rel * e + (1 - a_rel) * v
+        env[i] = e
+    gain = np.where(env > thr, (env / thr) ** (1.0 / ratio - 1.0), 1.0)
+    return x * gain
+
+
+def active_rms(x):
+    """RMS over the whole clip (compression is sample-for-sample, so both versions have the same length)."""
+    return np.sqrt(np.mean(x ** 2)) if len(x) else 0.0
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     print(f"{'file':11s} {'old peak':>8s} {'new peak':>8s} {'gain dB':>7s} {'old dur':>7s} {'new dur':>7s} {'lead trimmed':>12s}")
@@ -88,7 +120,12 @@ def main():
         old_peak = np.abs(x).max()
         y = spectral_gate(x)
         y = gate_and_trim(sr, y, keep_tail=name in KEEP_TAILS)
+        plain = y * (TARGET_PEAK / max(np.abs(y).max(), 1e-9))
+        if LOUD:
+            y = compress(sr, y)
         y = y * (TARGET_PEAK / max(np.abs(y).max(), 1e-9))
+        if LOUD:
+            print(f"{name:11s} loudness vs plain clean: {20 * np.log10(active_rms(y) / max(active_rms(plain), 1e-9)):+5.1f} dB")
         write_u8(os.path.join(OUT_DIR, name), sr, y)
         _, z = read_u8(os.path.join(OUT_DIR, name))
         lead_old = np.argmax(np.abs(x) > 2) / sr * 1000

@@ -63,7 +63,27 @@
 
   <dialog id="settings">
     <form method="dialog">
-      <h2>Display</h2>
+      <h2>Settings</h2>
+
+      <fieldset id="board-settings" class="span-all">
+        <legend>Scoreboard <span id="board-settings-note" class="legend-note"></span></legend>
+        <div class="seg-row">
+          <span class="seg-label">Sport</span>
+          <div class="seg" role="group" aria-label="Sport">
+            <button type="button" data-cmd="MODE" data-value="0">Volleyball</button>
+            <button type="button" data-cmd="MODE" data-value="1">Tennis</button>
+          </div>
+        </div>
+        <div class="seg-row">
+          <span class="seg-label">Game to</span>
+          <div class="seg" role="group" aria-label="Volleyball game to">
+            <button type="button" data-cmd="TO" data-value="15">15</button>
+            <button type="button" data-cmd="TO" data-value="21">21</button>
+            <button type="button" data-cmd="TO" data-value="25">25</button>
+          </div>
+        </div>
+      </fieldset>
+
 
       <fieldset>
         <legend>Where is this phone?</legend>
@@ -88,6 +108,7 @@
         <label class="choice"><input type="radio" name="colorStyle" value="background">
           <span><b>Colored background</b><small>Each half filled with its team color</small></span></label>
       </fieldset>
+
 
       <label class="toggle"><input type="checkbox" name="wakeLock"> Keep the screen on</label>
 

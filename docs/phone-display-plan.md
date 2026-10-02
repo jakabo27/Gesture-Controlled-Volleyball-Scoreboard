@@ -62,7 +62,8 @@ The Pi's firmware probes GPIO 0/1 for a HAT EEPROM at boot. The Mega will see a 
 * A separate process from the vision engine (`scoreboard-link.service`, lower priority), so a crash here can't affect scoring.
 * Reads the UART from boot and keeps the latest valid line (checksummed; boot noise and partial lines are dropped) even before Bluetooth is up.
 * BlueZ 5.50 GATT server and LE advertisement over D-Bus (`python3-dbus` + `python3-gi`, both already installed, so no `pip` installs on the Pi). It retries every 5s until `bluetoothd` appears and re-registers if it restarts.
-* Service `b3710001-…`, characteristic **State** `b3710002-…` (read + notify): 17 bytes, see `PACKET_FORMAT`. It's sent on every change, plus a keep-alive every 2s so the phone can tell a dead link from a quiet game. **Command** (write, pairing required) comes with phone control.
+* Service `b3710001-…`, characteristic **State** `b3710002-…` (read + notify): 17 bytes, see `PACKET_FORMAT`. It's sent on every change, plus a keep-alive every 2s so the phone can tell a dead link from a quiet game.
+* Characteristic **Command** `b3710003-…` (write): ASCII `MODE,0|1` or `TO,15|21|25`. Only those match the whitelist (`COMMAND_RE`); they're forwarded to the Arduino as `$C,<cmd>*<XOR>` on the Pi's pin 27 → Mega pin 19 wire. Score changes (+1/−1) are deliberately not remote-controllable yet. `SCOREBOARD_BLE_SECURE=1` makes the characteristic `encrypt-write`, so only a paired phone can write. Turn it on before adding score control.
 * Advertises only the name **Scoreboard**: name + 128-bit UUID wouldn't fit in 31 bytes, so the page filters on the name.
 * Re-registers the advertisement after every disconnect (BlueZ 5.50 can stop advertising after a central disconnects).
 * `python3 scoreboard_link.py --stdin --no-ble` parses lines from stdin and prints packets, for testing without hardware.

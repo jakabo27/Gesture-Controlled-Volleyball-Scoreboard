@@ -53,5 +53,14 @@ check('digit table matches the sketch', () => {
   assert.deepStrictEqual(rows, P.DIGIT_TABLE);
 });
 
+check('phone commands match the Pi whitelist', () => {
+  assert.strictEqual(P.commandText('TO', 25), 'TO,25');
+  assert.strictEqual(P.commandText('MODE', 0), 'MODE,0');
+  assert.throws(() => P.commandText('TO', 30));
+  const pi = fs.readFileSync(path.join(__dirname, '..', 'pi', 'scoreboard_link.py'), 'utf8');
+  assert.ok(pi.includes("COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25))$')"));
+  assert.ok(pi.includes(P.COMMAND_CHAR_UUID));
+});
+
 if (failures) { console.log(failures + ' failed'); process.exit(1); }
 console.log('all passed');

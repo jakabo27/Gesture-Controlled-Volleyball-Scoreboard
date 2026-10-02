@@ -13,8 +13,9 @@ A single static page that shows the live score on a phone over Bluetooth LE: no 
 * **Colored background** (optional): each half is filled with its team color, with black or white digits, whichever has more contrast.
 * **Mirrored by default:** the phone sits on top of the scoreboard facing the person *behind* it, so AWAY is on the left and HOME on the right. Settings → "In front of the scoreboard" flips it.
 * A banner for each point ("HOME +1 · T-pose"), a Pi gestures on/off indicator, the game-to score, and a warning when data stops.
+* **Scoreboard settings** (top of Settings): sport (volleyball / tennis, with a confirmation because it resets the score) and volleyball game-to (15 / 21 / 25). These are sent to the Arduino through the Pi's command characteristic. The buttons show what the scoreboard reports, so they also reflect changes made with the physical button chords.
 
-Settings are stored per phone in `localStorage`.
+Display settings are stored per phone in `localStorage`.
 
 ## Connecting
 

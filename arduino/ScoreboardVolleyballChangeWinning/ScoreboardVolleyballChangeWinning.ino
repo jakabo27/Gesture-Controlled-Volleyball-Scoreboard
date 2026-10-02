@@ -155,6 +155,7 @@ ResponsiveAnalogRead analogAway(AwaySliderPin, true, 0.001);
 #define AwayDownPin 11
 #define ResetPin 8
 #define SpeakerOutPin 5
+#define BRIDGED_AUDIO 0   // 1 = also output inverted audio on pin 2 (for a differential amp input), see setup()
 
 // Pins from the Pi
 #define PiSparePin 44 // Pi "Spare"
@@ -216,7 +217,6 @@ long heartbeatRange = 700; //ms
 bool prevSparePinValue = 0;
 bool blueBorderShowing = false;
 bool gameWonFirstTime = true;
-int justPlayedWinningTune = 0;
 bool SDSuccess = true;
 int sportMode = 0; // 0 = Volleyball.  1 = Tennis.  2 = ??
 bool WAVMode = true; // true = play .wav files if SD card works.  False = beeps only
@@ -242,6 +242,35 @@ const char* lastEvent = "BOOT"; // HU/HD/AU/AD buttons, HP/AP Pi point, HC/AC co
 byte eventSeq = 0;
 char lastStateBody[64] = "";
 
+// Button chords: press 2, 3 or 4 score buttons together. A single press acts immediately; if more buttons
+// join, it was the start of a chord and is undone. The chord fires on press (all 4 down, or no new button for
+// CHORD_SETTLE_MS) and then every score button is ignored until all are released, so letting go can never
+// trigger anything.
+#define CHORD_SETTLE_MS 350
+#define CHORD_UNDO_MS 1500      // a single press this recent is undone when it turns into a chord
+int prevButtonsHeld = 0;
+int chordButtons = 0;           // most score buttons held at once in the chord being formed
+bool chordLatched = false;      // chord done: wait for every score button to be released
+elapsedMillis chordSettle;
+elapsedMillis timeSincePress = 10000;
+int pressHome = 0, pressAway = 0;   // score before the latest fresh press (for the undo)
+bool pressGameWon = true;
+
+// Celebration song, non-blocking so any button press can cut it off
+const char* pendingSongWav = NULL;  // waits for the point sound to finish, then starts
+bool songWavPlaying = false;
+const int* melodyNotes = NULL;      // tone() fallback when there is no SD card / voice mode is off
+int melodyPairs = 0;
+int melodyPos = 0;
+long melodyWholeNote = 0;
+unsigned long melodyNoteMs = 0;
+elapsedMillis melodyTimer;
+
+// Commands from the Pi on Serial1 RX (phone settings): "$C,<name>,<value>*<XOR>"
+char cmdBuf[32];
+byte cmdLen = 0;
+bool cmdActive = false;
+
 //LCD 
 LCD_I2C lcd(0x27); 
 elapsedMillis LCDUpdate;
@@ -251,9 +280,16 @@ int LCDRefreshRate = delayManualChange - 10; //ms between updating LCD
 
 void makeBorderBlue();
 void UpdateDisplay();
-void playASong(int melodyArray[], int tempo);
-void playRickRoll();
-void playGameOfThrones();
+void startCelebration(bool homeWon);
+void stopCelebration();
+bool celebrationActive();
+void serviceAudio();
+void serviceSerialCommands();
+int scoreButtonsHeld();
+void runChord(int buttons);
+void setSportMode(int mode);
+void setScoreTo(int to);
+void toggleSoundMode();
 void noteEvent(const char* code);
 void sendStateIfDue(bool force);
 
@@ -280,9 +316,17 @@ void setup() {
 
   //SD and speaker
   tmrpcm.speakerPin = SpeakerOutPin;  //5,6,11 or 46 on Mega, 9 on Uno, Nano, etc
-  tmrpcm.quality(1); // Set it to high quality (1)
-  tmrpcm.setVolume(5); //set the volume 0 to 7.  0 is default.  
+  tmrpcm.quality(1); // 2x oversampling: 32 kHz PWM carrier (inaudible) with a 500-step range at 16 kHz WAVs
+  // Volume = sample shift: setVolume(4) = x1, setVolume(5) = x2. Samples are 8-bit (0-255), so x2 spans 0-510:
+  // a full-scale clip fills the whole 500-step PWM range. 5 is the loudest setting that doesn't clip, as long
+  // as the WAVs are normalized (tools/clean_wavs.py peaks them at 120/127). 6 (x4) would clip.
+  tmrpcm.setVolume(5);  
   pinMode(SpeakerOutPin, OUTPUT);
+#if BRIDGED_AUDIO
+  // TMRpcm already drives an inverted copy of the audio on OC3B (Mega pin 2). With an amplifier that has a
+  // differential input, wire IN+ to pin 5 and IN- to pin 2: twice the voltage swing (+6 dB) at the same clip point.
+  pinMode(2, OUTPUT);
+#endif
   if (!SD.begin(SD_ChipSelectPin)) {  // see if the card is present and can be initialized:
     Serial.println("SD fail");  
     SDSuccess = false;
@@ -321,52 +365,91 @@ void loop() {
   analogAway.update();  
   pinMode(AwayDownPin, INPUT_PULLUP); 
 
-  // Scores
+  // Score buttons. 2, 3 or 4 pressed together are a chord (see runChord); otherwise each acts on its own.
+  int buttonsHeld = scoreButtonsHeld();
+  if(buttonsHeld > 0 && prevButtonsHeld == 0)
+  { // fresh press: remember the score, in case this press turns out to be the start of a chord
+    pressHome = homeScore;
+    pressAway = awayScore;
+    pressGameWon = gameWonFirstTime;
+    timeSincePress = 0;
+  }
+  prevButtonsHeld = buttonsHeld;
+
+  if(chordLatched)
+  {
+    if(buttonsHeld == 0) chordLatched = false; // every button released: back to normal
+  }
+  else if(buttonsHeld >= 2)
+  {
+    if(buttonsHeld > chordButtons) { chordButtons = buttonsHeld; chordSettle = 0; }
+    if(chordButtons == 4 || chordSettle >= CHORD_SETTLE_MS)
+    {
+      // The first button of the chord already counted as a point: undo it
+      if(timeSincePress < CHORD_UNDO_MS && (homeScore != pressHome || awayScore != pressAway))
+      {
+        homeScore = pressHome;
+        awayScore = pressAway;
+        gameWonFirstTime = pressGameWon;
+        stopCelebration();
+        UpdateDisplay();
+      }
+      runChord(chordButtons);
+      chordLatched = true;
+      chordButtons = 0;
+    }
+  }
+  else
+  {
+  chordButtons = 0;
   // Home Up
   if(!digitalRead(HomeUpPin) && timeManualScoreChange > delayManualChange)
   {
+    stopCelebration(); // any button press cuts the celebration song short
     homeScore = homeScore + 1; // increase score
     timeManualScoreChange = 0; // Reset timer
     noteEvent("HU");
-    
+
       if (SDSuccess && WAVMode){
         if(homeScore%3==0)      tmrpcm.play("hUp1.wav");
         else if(homeScore%3==1) tmrpcm.play("hUp2.wav");
         else if(homeScore%3==2) tmrpcm.play("hUp3.wav");}
-      else 
+      else
         tone(SpeakerOutPin, 100, 100);
-    UpdateDisplay(); 
+    UpdateDisplay();
     Serial.println("Home up");
   }
   // Home Down
   if(!digitalRead(HomeDownPin) && timeManualScoreChange > delayManualChange)
   {
+    stopCelebration();
     homeScore = homeScore - 1; // decrease score
     if(homeScore < 0) homeScore = 0;
     timeManualScoreChange = 0; // Reset timer
     noteEvent("HD");
-    UpdateDisplay(); 
+    UpdateDisplay();
     if (SDSuccess && WAVMode){
       if(homeScore%3==0)      tmrpcm.play("hDown1.wav");
         else if(homeScore%3==1) tmrpcm.play("hDown2.wav");
         else if(homeScore%3==2) tmrpcm.play("hDown3.wav");
       }
-    else 
+    else
       tone(SpeakerOutPin, 100, 50);
     Serial.println("Home down");
   }
   // Away Up
   if(!digitalRead(AwayUpPin) && timeManualScoreChange > delayManualChange)
   {
+    stopCelebration();
     awayScore = awayScore + 1; // increase score
     timeManualScoreChange = 0; // Reset timer
     noteEvent("AU");
-     
+
       if (SDSuccess && WAVMode){
         if(awayScore%3==0)      tmrpcm.play("aUp1.wav");
         else if(awayScore%3==1) tmrpcm.play("aUp2.wav");
         else if (awayScore%3==2) tmrpcm.play("aUp3.wav");}
-      else 
+      else
         tone(SpeakerOutPin, 350, 100);
     UpdateDisplay();
     Serial.println("Away up");
@@ -374,25 +457,28 @@ void loop() {
   // Away Down
   if(!digitalRead(AwayDownPin) && timeManualScoreChange > delayManualChange)
   {
-    Serial.println(String(!digitalRead(AwayDownPin)));
-    awayScore = awayScore - 1; // increase score
+    stopCelebration();
+    awayScore = awayScore - 1; // decrease score
     if(awayScore < 0) awayScore = 0;
     timeManualScoreChange = 0; // Reset timer
     noteEvent("AD");
-    UpdateDisplay(); 
-   
+    UpdateDisplay();
+
     if (SDSuccess && WAVMode){
       if(awayScore%3==0)      tmrpcm.play("aDown1.wav");
         else if(awayScore%3==1) tmrpcm.play("aDown2.wav");
         else if (awayScore%3==2) tmrpcm.play("aDown3.wav");
       }
-    else 
+    else
       tone(SpeakerOutPin, 75, 65);
-    Serial.println("Away down1");
+    Serial.println("Away down");
   }
+  } // end single-button handling
+
   // Reset
   if(!digitalRead(ResetPin) && timeManualScoreChange > delayManualChange)
   {
+    stopCelebration();
     awayScore = 0; 
     homeScore = 0;
     gameWonFirstTime = 1;
@@ -411,14 +497,13 @@ void loop() {
     homeScore = homeScore + 1; // increase score
     timePiChange = 0; // Reset timer
     noteEvent("HP");
-    if(justPlayedWinningTune == 0) 
+    if(!celebrationActive())
     {
       if (SDSuccess && WAVMode)
         tmrpcm.play("PtHm.wav");
       else 
         tone(SpeakerOutPin, 400, 200);
     }
-    //if(justPlayedWinningTune == 0) tone(SpeakerOutPin, 300, 250);
     UpdateDisplay(); 
     Serial.println("Point Home");
   }
@@ -428,10 +513,7 @@ void loop() {
     awayScore = awayScore + 1; // increase score
     timePiChange = 0; // Reset timer
     noteEvent("AP");
-    
-    //startPlayback(pointAwayAudio, sizeof(pointAwayAudio));
-    //if(justPlayedWinningTune == 0) tone(SpeakerOutPin, 500, 250);
-    if(justPlayedWinningTune == 0) 
+    if(!celebrationActive())
     {
       if (SDSuccess && WAVMode)
         tmrpcm.play("PtAwy.wav");
@@ -445,6 +527,7 @@ void loop() {
   //Surrender Cobra Home from Pi (Home down)
   if(digitalRead(PiPinSurrenderHome) && timePiChange > delayPiChange && raspiOn)
   {
+    stopCelebration();
     homeScore = homeScore - 1; // decrease score
     if(homeScore < 0) homeScore = 0;
     timePiChange = 0; // Reset timer
@@ -459,6 +542,7 @@ void loop() {
   // Surrender Cobra Away from Pi (Away Down)
   if(digitalRead(PiPinSurrenderAway) && timePiChange > delayPiChange && raspiOn)
   {
+    stopCelebration();
     awayScore = awayScore - 1; // decrease score
     if(awayScore < 0) awayScore = 0;
     timePiChange = 0; // Reset timer
@@ -496,7 +580,6 @@ void loop() {
     Serial.println("thisPeriod:  " + String(thisHeartbeatPeriod));
     Serial.println("prevPeriod1: " + String(prevHeartbeatPeriod1));
     Serial.println("prevPeriod2: " + String(prevHeartbeatPeriod2));
-    Serial.println("justWinning:" + String(justPlayedWinningTune));
     
     // Fixed by Antigravity: lowered threshold from 300ms to 75ms to support high-speed Pi execution (up to 13 FPS)
     // Also allow instant connection on boot if previous periods are still in initial uncalibrated state (>= 3000ms)
@@ -508,11 +591,10 @@ void loop() {
 
     static int irregularHeartbeatStreak = 0; // Debounce irregular pulses
 
-    if ((periodsMatch && thisHeartbeatPeriod > 75) || justPlayedWinningTune > 0)
+    if (periodsMatch && thisHeartbeatPeriod > 75)
        {
         irregularHeartbeatStreak = 0; // Reset streak on valid pulse
         raspiOn = 1;
-        if(justPlayedWinningTune > 0) justPlayedWinningTune -= 1;
         if(firstTimePiOn)
         {
           timeSincePiConnected = 0; // This timer is used for where it "disconnects" within a few seconds of booting. 
@@ -575,124 +657,8 @@ void loop() {
         UpdateDisplay(); 
       }
 
-  int buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) + 
-                       int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
-   if(buttonsPressed >=2)
-   {
-    // delay a bit to give you time to press the last buttons
-    delay(400);
-    buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) + 
-                       int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
-   }
-   
-  // Change sport mode by pressing all 4 buttons simultaneously
-  if(buttonsPressed == 4)
-  {
-    sportMode = sportMode + 1;
-    if(sportMode > 1) sportMode = 0;
-
-    awayScore = 0;
-    homeScore = 0;
-    timeManualScoreChange = 0; // Reset timer
-    noteEvent("MD");
-    UpdateDisplay();
-    // 0 = Volleyball Mode
-    if(sportMode == 0) {
-      if (SDSuccess && WAVMode) tmrpcm.play("VBMode.wav");
-      else tone(SpeakerOutPin, 100, 100);
-    }
-    // 1 = Tennis Mode
-    else if (sportMode == 1)
-    {
-      // say "Tennis mode"
-      if (SDSuccess && WAVMode) tmrpcm.play("TMode.wav");
-      else {tone(SpeakerOutPin, 100, 100); delay(100); tone(SpeakerOutPin, 100, 100); }
-    }
-    // 2 = Ultimate Frisbee
-    else{
-      if (SDSuccess && WAVMode) tmrpcm.play("UMode.wav");
-      else {tone(SpeakerOutPin, 100, 100); delay(100); 
-            tone(SpeakerOutPin, 100, 100); delay(100); 
-            tone(SpeakerOutPin, 100, 100); }
-    }
-    Serial.println("Sport mode changed");
-    sendStateIfDue(true);
-
-    // wait for buttons to be released 
-    while(buttonsPressed >= 3){
-      delay(5);
-      buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) + 
-                       int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
-    }
-    
-
-  }
-
-  // Change WAV/Tone mode by pressing any 3 buttons simultaneously
-  
-  else if(buttonsPressed == 3)
-  {
-    if(WAVMode >= 1) WAVMode = 0;
-    else WAVMode = 1;
-    noteEvent("SM");
-    sendStateIfDue(true);
-    // Don't have to change scores since reset button will have reset it to 0:0
-
-    if (SDSuccess && WAVMode)
-      {
-      tmrpcm.play("WavMd.wav"); // say "Speech Mode" or similar
-      delay(1752);
-      }
-    else {
-      for (int i = 50; i < 350; i+=10)
-        {tone(SpeakerOutPin, i, 10);
-        delay(9);}
-    }
-    Serial.println("Sound Mode Changed");
-    // wait for buttons to be released 
-    while(buttonsPressed >= 3){
-      delay(5);
-      buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) + 
-                       int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
-    }
-  }
-
-  // 2 buttons pressed in volleyball mode to change between game to 21, 25, and 15 
-  else if(buttonsPressed == 2)
-  {
-    timeManualScoreChange = 0; // Reset timer
-    UpdateDisplay(); 
-    // 0 = Volleyball Mode scores 21 --> 25 --> 15 --> 21 etc
-    if(sportMode == 0) {
-      if (volleyballScoreTo == 21)
-      {
-        volleyballScoreTo = 25;
-        if (SDSuccess && WAVMode) tmrpcm.play("VBto25.wav");
-        else tone(SpeakerOutPin, 100, 100);
-      }
-      else if (volleyballScoreTo == 25)
-      {
-        volleyballScoreTo = 15;
-        if (SDSuccess && WAVMode) tmrpcm.play("VBto15.wav");
-        else tone(SpeakerOutPin, 100, 100);
-      }
-      else if (volleyballScoreTo == 15)
-      {
-        volleyballScoreTo = 21;
-        if (SDSuccess && WAVMode) tmrpcm.play("VBto21.wav");
-        else tone(SpeakerOutPin, 100, 100);
-      } 
-      Serial.println("Volleyball game to score changed");
-      noteEvent("GT");
-      sendStateIfDue(true);
-    }
-    while(buttonsPressed >= 2){
-      delay(5);
-      buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) +
-                       int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
-    }
-  }
-
+  serviceAudio();           // celebration song / melody, non-blocking
+  serviceSerialCommands();  // phone settings from the Pi
   sendStateIfDue(false);
 }
 
@@ -922,36 +888,11 @@ void UpdateDisplay()
        (awayScore >= winScore && (awayScore - homeScore >= 2))) &&
         gameWonFirstTime)
     {
-//      delay(600);
-      if (SDSuccess && WAVMode){while(tmrpcm.isPlaying()) delay(1);}
       Serial.println("SOMEONE WON!!!");
-      justPlayedWinningTune = 5;
-      // Play a celebration noise
       gameWonFirstTime = 0;
       noteEvent(homeScore > awayScore ? "HW" : "AW");
-      sendStateIfDue(true); // the song below blocks the loop for several seconds
-      if(homeScore > awayScore) {
-        if (SDSuccess && WAVMode) tmrpcm.play("Champ.wav"); // We are the champions
-        else playRickRoll();
-        }
-      else  //https://bleacherreport.com/articles/1458324-the-20-most-famous-songs-in-sports //https://www.musicgrotto.com/pump-up-songs/
-      {  if (SDSuccess && WAVMode)  tmrpcm.play("allWin.wav");
-        else playGameOfThrones();
-      }
-      if (SDSuccess && WAVMode){
-        while(tmrpcm.isPlaying()) 
-        {
-          delay(1);
-          if(digitalRead(PiPinHeartbeat) != prevHeartbeatValue)
-            {
-              long thisHeartbeatPeriod = (long)timeHeartbeat;
-              prevHeartbeatPeriod2 = prevHeartbeatPeriod1;
-              prevHeartbeatPeriod1 = thisHeartbeatPeriod; 
-              timeHeartbeat = 0; // reset timer
-              prevHeartbeatValue = digitalRead(PiPinHeartbeat);
-            }
-        }
-      }
+      // Non-blocking: starts after the point sound finishes, and any button press cuts it off
+      startCelebration(homeScore > awayScore);
     }
 
   
@@ -1028,95 +969,160 @@ void sendStateIfDue(bool force)
   timeSinceStateSent = 0;
 }
 
-void playASong(int melodyArray[], int tempo)
+// ---- Celebration song (non-blocking) ---------------------------------------------------------------
+void startMelody(const int* notes, int pairs, int tempo)
 {
-  int buzzer = SpeakerOutPin;
-  int notes = sizeof(melodyArray) / sizeof(melodyArray[0]) / 2;
-  int wholenote = (60000 * 4) / tempo;
-  int divider = 0, noteDuration = 0;
+  melodyNotes = notes;
+  melodyPairs = pairs;
+  melodyPos = 0;
+  melodyWholeNote = (60000L * 4) / tempo;
+  melodyNoteMs = 0;
+  melodyTimer = 0;
+}
 
-  for (int thisNote = 0; thisNote < notes * 2; thisNote = thisNote + 2) {
-    divider = melodyArray[thisNote + 1];
-    if (divider > 0) {
-      noteDuration = (wholenote) / divider;
-    } else if (divider < 0) {
-      noteDuration = (wholenote) / abs(divider);
-      noteDuration *= 1.5; // increases the duration in half for dotted notes
-    }
-    tone(buzzer, melodyArray[thisNote], noteDuration * 0.9);
-    delay(noteDuration);
-    noTone(buzzer);
+void startCelebration(bool homeWon)
+{
+  if(SDSuccess && WAVMode)
+    pendingSongWav = homeWon ? "Champ.wav" : "allWin.wav";   // starts once the point sound has finished
+  else if(homeWon)
+    startMelody(melodyRickRoll, sizeof(melodyRickRoll) / sizeof(melodyRickRoll[0]) / 2, 200);
+  else
+    startMelody(melodyGameOfThrones, sizeof(melodyGameOfThrones) / sizeof(melodyGameOfThrones[0]) / 2, 125);
+}
 
-    if(digitalRead(PiPinHeartbeat) != prevHeartbeatValue)
-    {
-      long thisHeartbeatPeriod = (long)timeHeartbeat;
-      prevHeartbeatPeriod2 = prevHeartbeatPeriod1;
-      prevHeartbeatPeriod1 = thisHeartbeatPeriod; 
-      timeHeartbeat = 0; // reset timer
-      prevHeartbeatValue = digitalRead(PiPinHeartbeat);
-    }
+bool celebrationActive()
+{
+  return pendingSongWav != NULL || songWavPlaying || melodyNotes != NULL;
+}
+
+void stopCelebration()
+{
+  pendingSongWav = NULL;
+  if(songWavPlaying) { tmrpcm.stopPlayback(); songWavPlaying = false; }
+  if(melodyNotes) { noTone(SpeakerOutPin); melodyNotes = NULL; }
+}
+
+// Called every loop: starts a queued song, and plays the next melody note when the last one is done
+void serviceAudio()
+{
+  if(songWavPlaying && !tmrpcm.isPlaying()) songWavPlaying = false;
+  if(pendingSongWav && !tmrpcm.isPlaying())
+  {
+    tmrpcm.play(pendingSongWav);
+    pendingSongWav = NULL;
+    songWavPlaying = true;
+  }
+  if(melodyNotes && melodyTimer >= melodyNoteMs)
+  {
+    if(melodyPos >= melodyPairs) { noTone(SpeakerOutPin); melodyNotes = NULL; return; }
+    int note = melodyNotes[melodyPos * 2];
+    int divider = melodyNotes[melodyPos * 2 + 1];
+    long duration = divider > 0 ? melodyWholeNote / divider : (melodyWholeNote / abs(divider)) * 3 / 2; // negative = dotted
+    if(note == REST) noTone(SpeakerOutPin);
+    else tone(SpeakerOutPin, note, duration * 9 / 10);
+    melodyNoteMs = duration;
+    melodyTimer = 0;
+    melodyPos++;
   }
 }
 
-
-void playRickRoll()
+// ---- Button chords and settings ------------------------------------------------------------------
+int scoreButtonsHeld()
 {
-  int tempo = 200; // default was 114
-  int buzzer = SpeakerOutPin;
-  int notes = sizeof(melodyRickRoll) / sizeof(melodyRickRoll[0]) / 2;
-  int wholenote = (60000 * 4) / tempo;
-  int divider = 0, noteDuration = 0;
+  return int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) +
+         int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
+}
 
-  for (int thisNote = 0; thisNote < notes * 2; thisNote = thisNote + 2) {
-    divider = melodyRickRoll[thisNote + 1];
-    if (divider > 0) {
-      noteDuration = (wholenote) / divider;
-    } else if (divider < 0) {
-      noteDuration = (wholenote) / abs(divider);
-      noteDuration *= 1.5; // increases the duration in half for dotted notes
-    }
-    tone(buzzer, melodyRickRoll[thisNote], noteDuration * 0.9);
-    delay(noteDuration);
-    noTone(buzzer);
+// Any 2 buttons: volleyball game-to 21 -> 25 -> 15. Any 3: voice / beeps. All 4: volleyball <-> tennis.
+void runChord(int buttons)
+{
+  timeManualScoreChange = 0;
+  if(buttons >= 4) setSportMode(sportMode == 0 ? 1 : 0);
+  else if(buttons == 3) toggleSoundMode();
+  else if(sportMode == 0) setScoreTo(volleyballScoreTo == 21 ? 25 : (volleyballScoreTo == 25 ? 15 : 21));
+  else tone(SpeakerOutPin, 60, 150); // tennis has no game-to setting
+}
 
-    if(digitalRead(PiPinHeartbeat) != prevHeartbeatValue)
-    {
-      long thisHeartbeatPeriod = (long)timeHeartbeat;
-      prevHeartbeatPeriod2 = prevHeartbeatPeriod1;
-      prevHeartbeatPeriod1 = thisHeartbeatPeriod; 
-      timeHeartbeat = 0; // reset timer
-      prevHeartbeatValue = digitalRead(PiPinHeartbeat);
-    }
+void setScoreTo(int to)
+{
+  volleyballScoreTo = to;
+  stopCelebration();
+  if (SDSuccess && WAVMode) tmrpcm.play(to == 25 ? "VBto25.wav" : (to == 15 ? "VBto15.wav" : "VBto21.wav"));
+  else tone(SpeakerOutPin, 100, 100);
+  Serial.println("Volleyball game to score changed");
+  noteEvent("GT");
+  sendStateIfDue(true);
+}
+
+void setSportMode(int mode)
+{
+  sportMode = mode;
+  homeScore = 0;
+  awayScore = 0;
+  gameWonFirstTime = 1; // new game: the winner's song can play again
+  stopCelebration();
+  noteEvent("MD");
+  UpdateDisplay();
+  if (SDSuccess && WAVMode) tmrpcm.play(sportMode == 0 ? "VBMode.wav" : "TMode.wav");
+  else tone(SpeakerOutPin, sportMode == 0 ? 100 : 200, 150);
+  Serial.println("Sport mode changed");
+  sendStateIfDue(true);
+}
+
+void toggleSoundMode()
+{
+  WAVMode = !WAVMode;
+  stopCelebration();
+  noteEvent("SM");
+  if (SDSuccess && WAVMode)
+    tmrpcm.play("WavMd.wav"); // say "Speech Mode" or similar
+  else
+  {
+    if (tmrpcm.isPlaying()) tmrpcm.stopPlayback();
+    for (int i = 50; i < 350; i += 10) { tone(SpeakerOutPin, i, 10); delay(9); } // ~0.3 s rising sweep
+  }
+  Serial.println("Sound Mode Changed");
+  sendStateIfDue(true);
+}
+
+// ---- Commands from the Pi (phone settings) ---------------------------------------------------------
+// "$C,MODE,<0|1>*<XOR>" sport mode (resets the score, like the 4-button chord)
+// "$C,TO,<15|21|25>*<XOR>" volleyball game-to
+// XOR = hex XOR of the characters between $ and *. Anything malformed is ignored.
+void handleCommand(char* line)
+{
+  char* star = strrchr(line, '*');
+  if(!star || strlen(star + 1) != 2) return;
+  *star = 0;
+  byte checksum = 0;
+  for(char* p = line; *p; p++) checksum ^= *p;
+  if(strtol(star + 1, NULL, 16) != checksum) return;
+  if(strncmp(line, "C,", 2) != 0) return;
+  char* name = line + 2;
+  char* comma = strchr(name, ',');
+  if(!comma) return;
+  *comma = 0;
+  int value = atoi(comma + 1);
+
+  if(strcmp(name, "MODE") == 0 && (value == 0 || value == 1))
+  {
+    if(value != sportMode) setSportMode(value);
+  }
+  else if(strcmp(name, "TO") == 0 && (value == 15 || value == 21 || value == 25))
+  {
+    if(value != volleyballScoreTo) setScoreTo(value);
   }
 }
 
-void playGameOfThrones()
+void serviceSerialCommands()
 {
-  int tempo = 125; // default was 83
-  int buzzer = SpeakerOutPin;
-  int notes = sizeof(melodyGameOfThrones) / sizeof(melodyGameOfThrones[0]) / 2;
-  int wholenote = (60000 * 4) / tempo;
-  int divider = 0, noteDuration = 0;
-
-  for (int thisNote = 0; thisNote < notes * 2; thisNote = thisNote + 2) {
-    divider = melodyGameOfThrones[thisNote + 1];
-    if (divider > 0) {
-      noteDuration = (wholenote) / divider;
-    } else if (divider < 0) {
-      noteDuration = (wholenote) / abs(divider);
-      noteDuration *= 1.5; // increases the duration in half for dotted notes
-    }
-    tone(buzzer, melodyGameOfThrones[thisNote], noteDuration * 0.9);
-    delay(noteDuration);
-    noTone(buzzer);
-
-    if(digitalRead(PiPinHeartbeat) != prevHeartbeatValue)
-    {
-      long thisHeartbeatPeriod = (long)timeHeartbeat;
-      prevHeartbeatPeriod2 = prevHeartbeatPeriod1;
-      prevHeartbeatPeriod1 = thisHeartbeatPeriod; 
-      timeHeartbeat = 0; // reset timer
-      prevHeartbeatValue = digitalRead(PiPinHeartbeat);
-    }
+  while(Serial1.available())
+  {
+    char c = Serial1.read();
+    if(c == '$') { cmdActive = true; cmdLen = 0; }
+    else if(!cmdActive) continue;
+    else if(c == '\r' || c == '\n') { cmdBuf[cmdLen] = 0; cmdActive = false; handleCommand(cmdBuf); }
+    else if(cmdLen < sizeof(cmdBuf) - 1) cmdBuf[cmdLen++] = c;
+    else cmdActive = false; // too long: not ours
   }
 }

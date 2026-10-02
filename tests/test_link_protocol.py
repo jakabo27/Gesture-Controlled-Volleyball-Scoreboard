@@ -88,6 +88,23 @@ class LinkProtocolTest(unittest.TestCase):
         self.assertEqual(len(empty), 17)
         self.assertEqual(empty[1], 0)
 
+    def test_commands(self):
+        line = link.build_command('TO,25')
+        self.assertTrue(line.startswith('$C,TO,25*') and line.endswith(chr(13) + chr(10)))
+        body, cs = line[1:].strip().split('*')
+        x = 0
+        for ch in body:
+            x ^= ord(ch)
+        self.assertEqual(int(cs, 16), x)
+        self.assertIsNotNone(link.build_command('MODE,1'))
+        for bad in ['TO,30', 'MODE,2', 'HU', 'TO,25;MODE,1', '', 'mode,1']:
+            self.assertIsNone(link.build_command(bad), bad)
+        # the sketch must parse exactly these command names and values
+        src = open(SKETCH, encoding='utf-8').read()
+        self.assertIn('strcmp(name, "MODE") == 0 && (value == 0 || value == 1)', src)
+        self.assertIn('strcmp(name, "TO") == 0 && (value == 15 || value == 21 || value == 25)', src)
+        self.assertIn('strncmp(line, "C,", 2)', src)
+
     def test_write_fixtures_for_js(self):
         fixtures = []
         for name, args in CASES:

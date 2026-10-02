@@ -131,12 +131,24 @@ legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter
 .dialog-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
 .fineprint { color: var(--muted); font-size: 12px; margin: 12px 0 0; text-align: center; }
 
+/* scoreboard settings (sent to the Arduino) */
+.legend-note { text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.seg-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.seg-label { width: 64px; color: var(--muted); font-size: 14px; }
+.seg { display: flex; flex: 1; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.seg button { flex: 1; padding: 10px 6px; background: transparent; color: var(--ink); border: 0; font-weight: 700;
+  font-size: 15px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #fff; }
+.seg button.sending { opacity: 0.5; }
+.seg button:disabled { opacity: 0.35; cursor: default; }
+
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
 @media (orientation: landscape) and (min-width: 640px) {
   dialog { width: min(760px, calc(100vw - 24px)); }
   dialog form { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
-  dialog h2, .toggle, .dialog-actions, .fineprint { grid-column: 1 / -1; }
+  dialog h2, .toggle, .dialog-actions, .fineprint, .span-all { grid-column: 1 / -1; }
 }
 
 /* Portrait: the two teams stack (the left team on top) so each score can use the full width */
