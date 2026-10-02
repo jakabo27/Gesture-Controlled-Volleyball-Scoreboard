@@ -605,3 +605,9 @@ The amp isn't identifiable in the saved photos.
 * With 3W into a 4" car coax speaker, a 12–20V class-D board (TPA3110 / TPA3116D2) powered straight from the Ryobi battery through a fuse would be about +7 to +10 dB louder.
 * Its inputs are single-ended (G = power ground), so `BRIDGED_AUDIO` stays 0.
 * The beeps were kept at their original low tones (`BEEP_PITCH 1`) at the user's request. The pin-release fix stays.
+
+**Amp upgrade shortlist (small, 12V, volume knob):** a PAM8610 board with an on-board volume pot.
+* 2 × 15W into 4Ω at 12V. The board is about 28 × 22 mm, about 45 × 48 × 18 mm with the pot.
+* It runs on 7–15V only, so it can't take the Ryobi's 18–20.5V directly: it needs a small buck converter set to 12V (2–3A) from the fused battery line.
+* Expected about +5 to +7 dB over the PAM8403's ~3W.
+* Alternative without a buck: an XH-A232 (TPA3110, 8–26V, straight from the battery), which has no knob, plus a panel-mount 10k pot wired as a divider on its input.
