@@ -600,3 +600,8 @@ Now:
 * Finished photos and videos: May 15, 2022
 
 The amp isn't identifiable in the saved photos.
+
+**Amplifier identified:** a PAM8403 module (5V, 2 × 3W with volume pot, Amazon, bought Dec 27, 2021). It's the loudness ceiling.
+* With 3W into a 4" car coax speaker, a 12–20V class-D board (TPA3110 / TPA3116D2) powered straight from the Ryobi battery through a fuse would be about +7 to +10 dB louder.
+* Its inputs are single-ended (G = power ground), so `BRIDGED_AUDIO` stays 0.
+* The beeps were kept at their original low tones (`BEEP_PITCH 1`) at the user's request. The pin-release fix stays.

@@ -156,8 +156,8 @@ ResponsiveAnalogRead analogAway(AwaySliderPin, true, 0.001);
 #define ResetPin 8
 #define SpeakerOutPin 5
 #define BRIDGED_AUDIO 0
-#define BEEP_PITCH 6      // beeps (voice mode off / no SD card) are played at this multiple of their original
-                          // 50-500 Hz pitches: below ~300 Hz a small speaker hardly makes sound. 1 = original.   // 1 = also output inverted audio on pin 2 (for a differential amp input), see setup()
+#define BEEP_PITCH 1      // multiplier for the beep pitches (voice mode off / no SD card). 1 = the original low
+                          // tones (preferred); higher values are louder on a small speaker.   // 1 = also output inverted audio on pin 2 (for a differential amp input), see setup()
 
 // Pins from the Pi
 #define PiSparePin 44 // Pi "Spare"
