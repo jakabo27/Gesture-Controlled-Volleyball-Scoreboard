@@ -587,3 +587,16 @@ Now:
 * Worth checking on the hardware:
   * the amp's gain pot and supply voltage (12V vs 5V),
   * an RC low-pass (~1k + 10nF) before the amp input, so the 32kHz carrier doesn't eat amp headroom.
+
+**Addendum (beeps):** the built-in beeps were also quiet, for two reasons, both fixed in the sketch (`beep()` helper, `BEEP_PITCH 6`):
+* TMRpcm leaves Timer3's PWM output connected to pin 5 after a WAV ends, so `tone()` couldn't drive the pin.
+* Most beeps were 50–100 Hz.
+
+**First build dates (for finding amplifier photos):**
+* CAD: September 18–21, 2021
+* Pose test videos: December 22–25, 2021
+* Assembly photos: January 1–4, 2022
+* Internal wiring photos: February 27, 2022
+* Finished photos and videos: May 15, 2022
+
+The amp isn't identifiable in the saved photos.

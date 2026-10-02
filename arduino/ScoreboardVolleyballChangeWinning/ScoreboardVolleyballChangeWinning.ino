@@ -155,7 +155,9 @@ ResponsiveAnalogRead analogAway(AwaySliderPin, true, 0.001);
 #define AwayDownPin 11
 #define ResetPin 8
 #define SpeakerOutPin 5
-#define BRIDGED_AUDIO 0   // 1 = also output inverted audio on pin 2 (for a differential amp input), see setup()
+#define BRIDGED_AUDIO 0
+#define BEEP_PITCH 6      // beeps (voice mode off / no SD card) are played at this multiple of their original
+                          // 50-500 Hz pitches: below ~300 Hz a small speaker hardly makes sound. 1 = original.   // 1 = also output inverted audio on pin 2 (for a differential amp input), see setup()
 
 // Pins from the Pi
 #define PiSparePin 44 // Pi "Spare"
@@ -291,6 +293,8 @@ void setSportMode(int mode);
 void setScoreTo(int to);
 void toggleSoundMode();
 void noteEvent(const char* code);
+void beep(unsigned int freq, unsigned long ms);
+void releaseSpeakerPin();
 void sendStateIfDue(bool force);
 
 void setup() {
@@ -415,7 +419,7 @@ void loop() {
         else if(homeScore%3==1) tmrpcm.play("hUp2.wav");
         else if(homeScore%3==2) tmrpcm.play("hUp3.wav");}
       else
-        tone(SpeakerOutPin, 100, 100);
+        beep(100, 100);
     UpdateDisplay();
     Serial.println("Home up");
   }
@@ -434,7 +438,7 @@ void loop() {
         else if(homeScore%3==2) tmrpcm.play("hDown3.wav");
       }
     else
-      tone(SpeakerOutPin, 100, 50);
+      beep(100, 50);
     Serial.println("Home down");
   }
   // Away Up
@@ -450,7 +454,7 @@ void loop() {
         else if(awayScore%3==1) tmrpcm.play("aUp2.wav");
         else if (awayScore%3==2) tmrpcm.play("aUp3.wav");}
       else
-        tone(SpeakerOutPin, 350, 100);
+        beep(350, 100);
     UpdateDisplay();
     Serial.println("Away up");
   }
@@ -470,7 +474,7 @@ void loop() {
         else if (awayScore%3==2) tmrpcm.play("aDown3.wav");
       }
     else
-      tone(SpeakerOutPin, 75, 65);
+      beep(75, 65);
     Serial.println("Away down");
   }
   } // end single-button handling
@@ -488,7 +492,7 @@ void loop() {
     if (SDSuccess && WAVMode )
       tmrpcm.play("Reset.wav");
     else 
-      tone(SpeakerOutPin, 50, 65);
+      beep(50, 65);
   }
   
   // Home Up from Pi
@@ -502,7 +506,7 @@ void loop() {
       if (SDSuccess && WAVMode)
         tmrpcm.play("PtHm.wav");
       else 
-        tone(SpeakerOutPin, 400, 200);
+        beep(400, 200);
     }
     UpdateDisplay(); 
     Serial.println("Point Home");
@@ -518,7 +522,7 @@ void loop() {
       if (SDSuccess && WAVMode)
         tmrpcm.play("PtAwy.wav");
       else 
-        tone(SpeakerOutPin, 500, 200);
+        beep(500, 200);
     }
     Serial.println("Point away");
     UpdateDisplay(); 
@@ -536,7 +540,7 @@ void loop() {
     if (SDSuccess && WAVMode)
       tmrpcm.play("SurHo.wav");
     else 
-      tone(SpeakerOutPin, 400, 300);
+      beep(400, 300);
     Serial.println("Surrender Cobra Home");
   }
   // Surrender Cobra Away from Pi (Away Down)
@@ -551,7 +555,7 @@ void loop() {
     if (SDSuccess && WAVMode)
       tmrpcm.play("SurAw.wav");
     else 
-      tone(SpeakerOutPin, 500, 300);
+      beep(500, 300);
     Serial.println("Point away");
   }
   
@@ -1019,11 +1023,26 @@ void serviceAudio()
     int divider = melodyNotes[melodyPos * 2 + 1];
     long duration = divider > 0 ? melodyWholeNote / divider : (melodyWholeNote / abs(divider)) * 3 / 2; // negative = dotted
     if(note == REST) noTone(SpeakerOutPin);
-    else tone(SpeakerOutPin, note, duration * 9 / 10);
+    else { releaseSpeakerPin(); tone(SpeakerOutPin, note, duration * 9 / 10); } // melody: real pitch
     melodyNoteMs = duration;
     melodyTimer = 0;
     melodyPos++;
   }
+}
+
+// tone() toggles pin 5 directly, but after a WAV has played TMRpcm's Timer3 still owns that pin (its PWM output
+// stays connected when a file ends), so every beep came out faint or silent. Disconnect it first; the next
+// tmrpcm.play() reconnects it (timerSt() rewrites TCCR3A).
+void releaseSpeakerPin()
+{
+  if (tmrpcm.isPlaying()) tmrpcm.stopPlayback();
+  TCCR3A &= ~(_BV(COM3A1) | _BV(COM3A0) | _BV(COM3B1) | _BV(COM3B0));
+}
+
+void beep(unsigned int freq, unsigned long ms)
+{
+  releaseSpeakerPin();
+  tone(SpeakerOutPin, freq * BEEP_PITCH, ms);
 }
 
 // ---- Button chords and settings ------------------------------------------------------------------
@@ -1040,7 +1059,7 @@ void runChord(int buttons)
   if(buttons >= 4) setSportMode(sportMode == 0 ? 1 : 0);
   else if(buttons == 3) toggleSoundMode();
   else if(sportMode == 0) setScoreTo(volleyballScoreTo == 21 ? 25 : (volleyballScoreTo == 25 ? 15 : 21));
-  else tone(SpeakerOutPin, 60, 150); // tennis has no game-to setting
+  else beep(60, 150); // tennis has no game-to setting
 }
 
 void setScoreTo(int to)
@@ -1048,7 +1067,7 @@ void setScoreTo(int to)
   volleyballScoreTo = to;
   stopCelebration();
   if (SDSuccess && WAVMode) tmrpcm.play(to == 25 ? "VBto25.wav" : (to == 15 ? "VBto15.wav" : "VBto21.wav"));
-  else tone(SpeakerOutPin, 100, 100);
+  else beep(100, 100);
   Serial.println("Volleyball game to score changed");
   noteEvent("GT");
   sendStateIfDue(true);
@@ -1064,7 +1083,7 @@ void setSportMode(int mode)
   noteEvent("MD");
   UpdateDisplay();
   if (SDSuccess && WAVMode) tmrpcm.play(sportMode == 0 ? "VBMode.wav" : "TMode.wav");
-  else tone(SpeakerOutPin, sportMode == 0 ? 100 : 200, 150);
+  else beep(sportMode == 0 ? 100 : 200, 150);
   Serial.println("Sport mode changed");
   sendStateIfDue(true);
 }
@@ -1078,8 +1097,7 @@ void toggleSoundMode()
     tmrpcm.play("WavMd.wav"); // say "Speech Mode" or similar
   else
   {
-    if (tmrpcm.isPlaying()) tmrpcm.stopPlayback();
-    for (int i = 50; i < 350; i += 10) { tone(SpeakerOutPin, i, 10); delay(9); } // ~0.3 s rising sweep
+    for (int i = 50; i < 350; i += 10) { beep(i, 10); delay(9); } // ~0.3 s rising sweep
   }
   Serial.println("Sound Mode Changed");
   sendStateIfDue(true);
