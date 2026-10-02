@@ -41,6 +41,8 @@ python PoseEstimationJT_Optimized.py "path/to/game.mp4"
 
 ## Install as a service
 
+The complete from-scratch setup (OS, packages, `config.txt`, groups, every unit and the boot chain) is in [`docs/pi-setup-from-scratch.md`](../docs/pi-setup-from-scratch.md). The short version for the vision engine:
+
 ```bash
 sudo cp systemd/scoreboard.service /etc/systemd/system/
 sudo mkdir -p /etc/systemd/system/scoreboard.service.d

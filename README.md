@@ -149,8 +149,10 @@ The Arduino decides whether the Pi is alive by comparing heartbeat periods: `thi
 | Heartbeat | 37 (GPIO 26) | 46 | toggles every 1.0s while vision is live |
 | Spare | 33 (GPIO 13) | 44 | reserved |
 | Ground | 39 | GND | common ground is mandatory |
+| **Phone link: state in** (pink) | 28 (GPIO 1, RXD2) | 18 (TX1) | via a 10k/20k divider (the Mega TX is 5V). Phone display, not deployed yet |
+| **Phone link: commands out** (pink) | 27 (GPIO 0, TXD2) | 19 (RX1) | via 1k. Future phone control |
 
-The Pi's 3.3V outputs drive the Mega's 5V inputs directly: 3.3V clears the ATmega2560's 3.0V input-high threshold, and nothing ever drives 5V back into the Pi. Locally on the Pi there's also an SSD1351 RGB OLED on SPI and a power button (hold 5s to shut down). Full details are in [`pi/README.md`](pi/README.md) and [`arduino/README.md`](arduino/README.md).
+The Pi's 3.3V outputs drive the Mega's 5V inputs directly: 3.3V clears the ATmega2560's 3.0V input-high threshold, and nothing ever drives 5V back into the Pi. Locally on the Pi there's also an SSD1351 RGB OLED on SPI and a power button (hold 5s to shut down). Full details are in [`pi/README.md`](pi/README.md) and [`arduino/README.md`](arduino/README.md). To set up a Pi from a blank SD card (including how everything starts on boot), see [`docs/pi-setup-from-scratch.md`](docs/pi-setup-from-scratch.md).
 
 ## What's next: the score on my phone
 

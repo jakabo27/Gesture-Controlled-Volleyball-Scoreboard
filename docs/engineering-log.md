@@ -500,3 +500,45 @@ The WAV gaps were already digital silence; the audible hiss came from the voice 
 * **Pose bursts:** `PoseEventLogger` keeps the last **20 frames + the current one in RAM only** (~55 MB) and writes nothing until a T-pose or cobra is confirmed; then it saves those 20 frames before, the trigger frame and 6 after (27 annotated JPEGs, ~3 MB per point, plus `frames.json`) to `FieldCaptures/PoseEvents/`. Folders are named with the session prefix (`S00003_...`).
 * `POSE_EVENT_LOGGING = True` switches the bursts and `tpose_candidates.jsonl` on/off; set it to `False` once T-pose tuning is finished.
 * Sections 4 and 19 (0.75 s interval, storage math) are superseded by this section.
+
+---
+
+## 30. Phone Score Display over Bluetooth LE (Oct 1 2026, built, not yet deployed)
+
+**Goal:** live score on the phone (Galaxy S24, Chrome) sitting on top of the scoreboard, with no Wi-Fi. Phone control (+1/−1) comes later, and a native Android app maybe after that. Hard rule: **the Arduino keeps working 100% without the Pi.**
+
+**Decisions (and why):**
+* **Bluetooth LE + a Web Bluetooth page** beat a phone hotspot (a tap every game, battery, Android randomizes the hotspot subnet) and a Pi Wi-Fi access point (riskiest Wi-Fi change on a hard-to-reach Pi). An ESP32 add-on was ruled out.
+* **The Arduino is the source of truth** and only *broadcasts*: one checksummed line per change (at most every 100ms) and at least once a second on Serial1. It writes only when the whole line fits in the TX buffer, so a missing Pi changes nothing.
+* **Pi UART2 (GPIO 0/1)** carries the Arduino link, so Bluetooth can have the main PL011 back. `miniuart-bt` would also have needed a `cmdline.txt` edit and a locked core clock.
+* **Bluetooth starts 20s after boot** (`scoreboard-bt.timer`), so the old 8s `hciuart` stall can't come back.
+* **Page:** bold solid seven-segment digits (the LED-dot look was hard to read in sun). **Day** theme (white, team color darkened to ≥4.5:1 contrast) is the default for noon sun, and **Night** (black, brightened colors, glow) is for stadium lights. There's an optional colored-background style. Mirrored by default (AWAY left, HOME right) for a phone facing the scorekeeper behind the board, with a flip setting.
+
+**Wiring (pink on the wiring diagram):**
+
+| Wire | From | Via | To |
+|---|---|---|---|
+| Score state (Arduino → Pi) | Mega **pin 18 (TX1)**, communication header | **10k** in series, then **20k** from the Pi side to GND (5V → 3.3V) | Pi **pin 28** (GPIO 1, RXD2), header row 14 |
+| Commands (Pi → Arduino, future phone control) | Pi **pin 27** (GPIO 0, TXD2), header row 14 | **1k** in series | Mega **pin 19 (RX1)** |
+| Ground | existing Pi pin 39 ↔ Mega GND | | |
+
+**Boot config:** in `/boot/config.txt`, replace `dtoverlay=disable-bt` with `dtoverlay=uart2`. Nothing else changes (`cmdline.txt` stays as is). The link then appears as `/dev/ttyAMA1` (38400 8N1).
+
+**Line format (Arduino → Pi):** `$S,<home>,<away>,<sportMode>,<scoreTo>,<piOn>,<homeColor>,<awayColor>,<d0>,<d1>,<d2>,<d3>,<event>,<eventSeq>*<XOR>`
+* Colors: FastLED hue 0–255, 256 white, 257 rainbow (slider ends, now `HUE_WHITE_BELOW` / `HUE_RAINBOW_ABOVE` in the sketch).
+* `d0`–`d3`: the glyphs `UpdateDisplay()` actually drew.
+* Events: `HU HD AU AD` buttons, `HP AP` T-pose, `HC AC` cobra, `RS`, `HW AW` win, `MD`, `GT`, `SM`.
+
+**BLE:** name `Scoreboard`, service `b3710001-1a78-4239-800f-cf4fa9544bbe`, state characteristic `b3710002-…` (read + notify, 17 bytes). It notifies on change plus a 2s keep-alive.
+
+**Built and verified on the bench:**
+* Firmware compiles for the Mega 2560: 35,106 bytes flash, 4,208 bytes RAM (+330), 3,984 bytes free.
+* `pi/scoreboard_link.py` (BlueZ 5.50 over D-Bus, no pip installs) compiles and parses on the Pi's Python 3.7.3. Its imports (`dbus`, `gi`, `serial`) are all present on the Pi.
+* Wire-contract tests (`tests/`) build lines from the sketch's own `snprintf` format, then check the Pi packer and the page decoder, the FastLED color port, and the digit table. They all pass and run in CI before each Pages deploy.
+* The page (`web/`) was previewed in demo mode: both themes, both color styles, both layouts, and portrait (teams stacked).
+
+**Not yet done (needs physical access):** flash the Mega, add the two wires and the divider, make the `config.txt` change, install the services, test with nRF Connect, then merge `phone-display` → `main` to publish the page on GitHub Pages. Step-by-step checklist with rollback: `docs/phone-display-plan.md` in the repo. Full from-scratch Pi setup (including how everything starts on boot): `docs/pi-setup-from-scratch.md`.
+
+**Found while doing this:** the old wiring diagram's Pi header drawing was missing a row (19 rows instead of 20), so the OLED pin labels sat one row high. It was redrawn to scale with every pin numbered, plus the Mega's communication header (pins 14–21).
+
+**Repo:** github.com/jakabo27/Gesture-Controlled-Volleyball-Scoreboard. `main` = known-good state (tag `v1.0-pre-ble`), branch `phone-display` = this work.
