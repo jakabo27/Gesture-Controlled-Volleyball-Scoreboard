@@ -18,6 +18,7 @@
 | 42 / 43 | From Pi: Home −1 / Away −1 (cobra) |
 | 46 | From Pi: heartbeat |
 | 44 | From Pi: spare |
+| 18 / 19 (TX1 / RX1) | State line to the Pi (phone display), 38400 baud. TX1 goes through a 10k/20k divider to the Pi's 3.3V RX |
 
 ## Controls
 
@@ -38,6 +39,16 @@ In tennis mode the digits show 0 / 15 / 30 / 40, and deuce and advantage are spe
 * Pi pulses are ignored unless the Pi is connected, and are rate-limited to one change every 3s.
 * Connect and disconnect are announced (`PiCon.wav` / `PiDis.wav`), so you know whether gestures are live.
 * The heartbeat periods are **signed** `long`. An `unsigned long` version made `prev - range` wrap to ~4.29 billion for any period under 700ms, so the Pi always "disconnected" about 7s after connecting.
+
+## State broadcast for the phone display
+
+Once per change (at most every 100ms) and at least once a second, `sendStateIfDue()` writes one checksummed line on Serial1:
+
+```
+$S,<home>,<away>,<sportMode>,<scoreTo>,<piOn>,<homeColor>,<awayColor>,<d0>,<d1>,<d2>,<d3>,<event>,<eventSeq>*<XOR>
+```
+
+The fields are: the scores, the mode and game-to, whether the Pi is trusted, both team colors (FastLED hue, 256 white, 257 rainbow), the four glyphs `UpdateDisplay()` drew, and what caused the last change. The line is only written if the whole thing fits in the TX buffer, so with nothing connected (or a dead Pi) the scoreboard behaves exactly as before. The format is checked by [`tests/test_link_protocol.py`](../tests/test_link_protocol.py).
 
 ## SD card
 

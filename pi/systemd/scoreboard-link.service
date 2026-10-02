@@ -1,0 +1,23 @@
+[Unit]
+Description=Scoreboard link: Arduino state (UART) to Bluetooth LE for the phone display
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+Type=simple
+User=pi
+# dialout: /dev/ttyAMA1. bluetooth: BlueZ's D-Bus policy (pi must also be in the group in /etc/group).
+SupplementaryGroups=dialout bluetooth
+WorkingDirectory=/home/pi/Documents
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -u /home/pi/Documents/scoreboard_link.py
+Restart=always
+RestartSec=5
+# Below the vision engine's priority (Nice=10 there is still lower than SSH/Wi-Fi)
+Nice=12
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

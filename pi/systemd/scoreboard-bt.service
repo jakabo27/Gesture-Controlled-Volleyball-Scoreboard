@@ -1,0 +1,9 @@
+[Unit]
+Description=Start Bluetooth for the phone display (delayed by scoreboard-bt.timer)
+# hciuart.service and bluetooth.service stay disabled so they never run during boot; this starts them
+# once the vision engine is up. hciuart uploads the radio firmware (the step that used to stall boot ~8 s).
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl start hciuart.service bluetooth.service
+RemainAfterExit=yes

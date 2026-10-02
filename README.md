@@ -160,7 +160,7 @@ The Pi only ever sends +1 / −1, so today it doesn't know the score. The next s
 2. The Pi publishes the score as a **Bluetooth LE** GATT service.
 3. A **Web Bluetooth** page in Chrome on my phone shows it in huge digits courtside, with no Wi-Fi needed. Phone control (+1 / −1) comes after that.
 
-The plan, including the wiring and boot-time changes on the Pi, is in [`docs/phone-display-plan.md`](docs/phone-display-plan.md).
+The firmware, the Pi service and the page are written and bench-tested (the page runs in demo mode). Deploying needs two new wires and a boot-config change, so it waits for physical access. The plan, wiring and deploy checklist are in [`docs/phone-display-plan.md`](docs/phone-display-plan.md), and the page is in [`web/`](web/).
 
 ## Repository layout
 
@@ -169,6 +169,8 @@ The plan, including the wiring and boot-time changes on the Pi, is in [`docs/pho
 | [`pi/`](pi/) | The vision engine as deployed: `PoseEstimationJT_Optimized.py`, the OLED helper, the TFLite model, the systemd unit and a `/boot/config.txt` snapshot |
 | [`arduino/`](arduino/) | The Mega 2560 scoreboard firmware |
 | [`legacy/`](legacy/) | The original 2022 Pi script, kept for comparison |
+| [`web/`](web/) | The phone display: a Web Bluetooth page (bold seven-segment digits, day and night themes, team colors) |
+| [`tests/`](tests/) | Wire-contract tests that keep the Arduino line format, the Pi's BLE packet and the page's decoder in sync |
 | [`docs/`](docs/) | The engineering log (every measurement and decision, in order) and the phone-display plan |
 | [`tools/`](tools/) | `clean_wavs.py` (de-hiss, trim and normalize the SD-card voice clips) and the source for the architecture diagram |
 | `media/` | Photos, diagrams, screenshots |

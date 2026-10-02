@@ -1,0 +1,9 @@
+[Unit]
+Description=Start Bluetooth 20 s after boot, after the scoreboard is already running
+
+[Timer]
+OnBootSec=20s
+Unit=scoreboard-bt.service
+
+[Install]
+WantedBy=timers.target

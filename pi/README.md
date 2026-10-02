@@ -9,6 +9,8 @@ Everything here is a copy of what runs on the scoreboard's Pi. The file layout m
 | `resources/saved_model_192x256/model_float16_quant.tflite` | MoveNet MultiPose Lightning, 192×256 input, float16 TFLite |
 | `systemd/scoreboard.service` (+ `scoreboard.service.d/10-safety.conf`) | The service unit and its drop-in |
 | `boot-config.txt` | Snapshot of `/boot/config.txt` as deployed (reference only, see below) |
+| `scoreboard_link.py` | **Phone display link (not deployed yet):** reads the Arduino's state over UART and serves it over Bluetooth LE |
+| `systemd/scoreboard-link.service`, `scoreboard-bt.service` / `.timer` | Its service, and the timer that starts Bluetooth 20s after boot |
 
 ## Hardware
 
@@ -89,6 +91,10 @@ The whole folder is capped at 5GB (oldest periodic frames go first), and writing
 * `dtoverlay=disable-bt`: Bluetooth off. This frees the PL011 UART and removes an 8s `hciuart` hang from boot. The planned phone display reverses this (see [`docs/phone-display-plan.md`](../docs/phone-display-plan.md)).
 * `initial_turbo=30`, `boot_delay=0`, `disable_splash=1`: faster boot.
 * The CPU governor **must** end up `ondemand` (set by `raspi-config.service` on Buster). With it disabled, the Pi sat at 600MHz and the loop took 2.4s instead of 0.34s.
+
+## Phone display link
+
+`scoreboard_link.py` is a separate, lower-priority service that forwards the Arduino's state line (UART2, `/dev/ttyAMA1`, 38400 baud) to a BLE GATT characteristic for the page in [`web/`](../web/). It needs a `config.txt` change and two new wires, so the step-by-step deploy (and rollback) is in [`docs/phone-display-plan.md`](../docs/phone-display-plan.md#deploy-checklist-needs-physical-access).
 
 ## The model
 

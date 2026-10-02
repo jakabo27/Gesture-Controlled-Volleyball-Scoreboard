@@ -222,6 +222,26 @@ int sportMode = 0; // 0 = Volleyball.  1 = Tennis.  2 = ??
 bool WAVMode = true; // true = play .wav files if SD card works.  False = beeps only
 int volleyballScoreTo = 21; //15, 21, or 25, defaulting to 21
 
+// Color slider ends: below HUE_WHITE_BELOW the digits are white, above HUE_RAINBOW_ABOVE they are a rainbow
+#define HUE_WHITE_BELOW 10
+#define HUE_RAINBOW_ABOVE 240
+
+// State broadcast to the Raspberry Pi on Serial1 (TX1 = pin 18), one way: the Pi forwards it to the phone.
+// The Arduino never waits on the Pi: a line is only written when the TX buffer has room for all of it,
+// otherwise it is skipped and sent on a later loop. One line per change (at most every 100ms) and at
+// least once a second:
+//   $S,<home>,<away>,<sportMode>,<scoreTo>,<piOn>,<homeColor>,<awayColor>,<d0>,<d1>,<d2>,<d3>,<event>,<eventSeq>*<XOR>\r\n
+// Colors: 0-255 = FastLED hue, 256 = white, 257 = rainbow. d0-d3 = digitTable index of the home tens,
+// home ones, away tens and away ones digits as drawn (-1 = blank). XOR = hex XOR of the chars between $ and *.
+#define PI_LINK_BAUD 38400
+#define COLOR_WHITE 256
+#define COLOR_RAINBOW 257
+elapsedMillis timeSinceStateSent;
+int shownDigits[4] = {-1, 0, -1, 0};
+const char* lastEvent = "BOOT"; // HU/HD/AU/AD buttons, HP/AP Pi point, HC/AC cobra, RS reset, HW/AW won, MD sport mode, GT game-to, SM sound mode
+byte eventSeq = 0;
+char lastStateBody[64] = "";
+
 //LCD 
 LCD_I2C lcd(0x27); 
 elapsedMillis LCDUpdate;
@@ -234,10 +254,13 @@ void UpdateDisplay();
 void playASong(int melodyArray[], int tempo);
 void playRickRoll();
 void playGameOfThrones();
+void noteEvent(const char* code);
+void sendStateIfDue(bool force);
 
 void setup() {
   
   Serial.begin(115200);
+  Serial1.begin(PI_LINK_BAUD); // state broadcast to the Pi (see sendStateIfDue)
 
   FastLED.addLeds<NEOPIXEL, DATA_PIN> (leds, NUM_LEDS);
   FastLED.setBrightness(10);
@@ -304,6 +327,7 @@ void loop() {
   {
     homeScore = homeScore + 1; // increase score
     timeManualScoreChange = 0; // Reset timer
+    noteEvent("HU");
     
       if (SDSuccess && WAVMode){
         if(homeScore%3==0)      tmrpcm.play("hUp1.wav");
@@ -320,6 +344,7 @@ void loop() {
     homeScore = homeScore - 1; // decrease score
     if(homeScore < 0) homeScore = 0;
     timeManualScoreChange = 0; // Reset timer
+    noteEvent("HD");
     UpdateDisplay(); 
     if (SDSuccess && WAVMode){
       if(homeScore%3==0)      tmrpcm.play("hDown1.wav");
@@ -335,6 +360,7 @@ void loop() {
   {
     awayScore = awayScore + 1; // increase score
     timeManualScoreChange = 0; // Reset timer
+    noteEvent("AU");
      
       if (SDSuccess && WAVMode){
         if(awayScore%3==0)      tmrpcm.play("aUp1.wav");
@@ -352,6 +378,7 @@ void loop() {
     awayScore = awayScore - 1; // increase score
     if(awayScore < 0) awayScore = 0;
     timeManualScoreChange = 0; // Reset timer
+    noteEvent("AD");
     UpdateDisplay(); 
    
     if (SDSuccess && WAVMode){
@@ -370,6 +397,7 @@ void loop() {
     homeScore = 0;
     gameWonFirstTime = 1;
     timeManualScoreChange = 0; // Reset timer
+    noteEvent("RS");
     UpdateDisplay(); 
     if (SDSuccess && WAVMode )
       tmrpcm.play("Reset.wav");
@@ -382,6 +410,7 @@ void loop() {
   {
     homeScore = homeScore + 1; // increase score
     timePiChange = 0; // Reset timer
+    noteEvent("HP");
     if(justPlayedWinningTune == 0) 
     {
       if (SDSuccess && WAVMode)
@@ -398,6 +427,7 @@ void loop() {
   {
     awayScore = awayScore + 1; // increase score
     timePiChange = 0; // Reset timer
+    noteEvent("AP");
     
     //startPlayback(pointAwayAudio, sizeof(pointAwayAudio));
     //if(justPlayedWinningTune == 0) tone(SpeakerOutPin, 500, 250);
@@ -418,6 +448,7 @@ void loop() {
     homeScore = homeScore - 1; // decrease score
     if(homeScore < 0) homeScore = 0;
     timePiChange = 0; // Reset timer
+    noteEvent("HC");
     UpdateDisplay(); 
     if (SDSuccess && WAVMode)
       tmrpcm.play("SurHo.wav");
@@ -431,6 +462,7 @@ void loop() {
     awayScore = awayScore - 1; // decrease score
     if(awayScore < 0) awayScore = 0;
     timePiChange = 0; // Reset timer
+    noteEvent("AC");
     UpdateDisplay(); 
     if (SDSuccess && WAVMode)
       tmrpcm.play("SurAw.wav");
@@ -562,7 +594,8 @@ void loop() {
     awayScore = 0;
     homeScore = 0;
     timeManualScoreChange = 0; // Reset timer
-    UpdateDisplay(); 
+    noteEvent("MD");
+    UpdateDisplay();
     // 0 = Volleyball Mode
     if(sportMode == 0) {
       if (SDSuccess && WAVMode) tmrpcm.play("VBMode.wav");
@@ -583,6 +616,7 @@ void loop() {
             tone(SpeakerOutPin, 100, 100); }
     }
     Serial.println("Sport mode changed");
+    sendStateIfDue(true);
 
     // wait for buttons to be released 
     while(buttonsPressed >= 3){
@@ -600,6 +634,8 @@ void loop() {
   {
     if(WAVMode >= 1) WAVMode = 0;
     else WAVMode = 1;
+    noteEvent("SM");
+    sendStateIfDue(true);
     // Don't have to change scores since reset button will have reset it to 0:0
 
     if (SDSuccess && WAVMode)
@@ -647,14 +683,17 @@ void loop() {
         else tone(SpeakerOutPin, 100, 100);
       } 
       Serial.println("Volleyball game to score changed");
+      noteEvent("GT");
+      sendStateIfDue(true);
     }
     while(buttonsPressed >= 2){
       delay(5);
-      buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) + 
+      buttonsPressed = int(!digitalRead(HomeUpPin)) + int(!digitalRead(HomeDownPin)) +
                        int(!digitalRead(AwayUpPin)) + int(!digitalRead(AwayDownPin));
     }
   }
-  
+
+  sendStateIfDue(false);
 }
 
 
@@ -778,6 +817,12 @@ void UpdateDisplay()
   int homeHue = map(currentHomeColor, 0, 1023, 0, 255);
   int awayHue = map(currentAwayColor, 0, 1023, 0, 255);
 
+  // Remember exactly what is drawn, for the state line to the Pi (-1 = blank leading digit)
+  shownDigits[0] = (homeScore >= 10 || homeDigitLeft > 0) ? homeDigitLeft : -1;
+  shownDigits[1] = homeDigitRight;
+  shownDigits[2] = (awayScore >= 10 || awayDigitLeft > 0) ? awayDigitLeft : -1;
+  shownDigits[3] = awayDigitRight;
+
   // Home digit left
   for(int i = 0; i <= 6; i++)
   {
@@ -786,9 +831,9 @@ void UpdateDisplay()
       bool thisSegment = digitTable[homeDigitLeft][i];
       if(thisSegment && (homeScore >= 10 || homeDigitLeft > 0))
         { // Turn on these LEDs
-          if(homeHue < 10)
+          if(homeHue < HUE_WHITE_BELOW)
             leds[i * 9 + thisPixel] = CRGB::White;
-          else if (homeHue > 240)
+          else if (homeHue > HUE_RAINBOW_ABOVE)
             leds[i * 9 + thisPixel] = CHSV(map(i*9+thisPixel,0,63,0,255), 255, 255);
           else
             leds[i * 9 + thisPixel] = CHSV(homeHue, 255, 255);
@@ -807,9 +852,9 @@ void UpdateDisplay()
       bool thisSegment = digitTable[homeDigitRight][i];
       if(thisSegment)
         { // Turn on these LEDs
-          if(homeHue < 10)
+          if(homeHue < HUE_WHITE_BELOW)
             leds[i * 9 + thisPixel + 63] = CRGB::White;
-          else if (homeHue > 240)
+          else if (homeHue > HUE_RAINBOW_ABOVE)
             leds[i * 9 + thisPixel + 63] = CHSV(map(i*9+thisPixel,0,63,0,255), 255, 255);
           else
             leds[i * 9 + thisPixel + 63] = CHSV(homeHue, 255, 255);
@@ -829,9 +874,9 @@ void UpdateDisplay()
       bool thisSegment = digitTable[awayDigitLeft][i];
       if(thisSegment && (awayScore >= 10 || awayDigitLeft > 0))
         { // Turn on these LEDs
-          if(awayHue <10)
+          if(awayHue < HUE_WHITE_BELOW)
             leds[i * 9 + thisPixel + 126] = CRGB::White;
-          else if (awayHue >240)
+          else if (awayHue > HUE_RAINBOW_ABOVE)
             leds[i * 9 + thisPixel + 126] = CHSV(map(i*9+thisPixel,0,63,0,255), 255, 255);
           else
             leds[i * 9 + thisPixel + 126] = CHSV(awayHue, 255, 255);
@@ -850,9 +895,9 @@ void UpdateDisplay()
       bool thisSegment = digitTable[awayDigitRight][i];
       if(thisSegment)
         { // Turn on these LEDs
-          if(awayHue <10)
+          if(awayHue < HUE_WHITE_BELOW)
             leds[i * 9 + thisPixel + 189] = CRGB::White;
-          else if (awayHue > 240)
+          else if (awayHue > HUE_RAINBOW_ABOVE)
             leds[i * 9 + thisPixel + 189] = CHSV(map(i*9+thisPixel,0,63,0,255), 255, 255);
           else
             leds[i * 9 + thisPixel + 189] = CHSV(awayHue, 255, 255);
@@ -883,6 +928,8 @@ void UpdateDisplay()
       justPlayedWinningTune = 5;
       // Play a celebration noise
       gameWonFirstTime = 0;
+      noteEvent(homeScore > awayScore ? "HW" : "AW");
+      sendStateIfDue(true); // the song below blocks the loop for several seconds
       if(homeScore > awayScore) {
         if (SDSuccess && WAVMode) tmrpcm.play("Champ.wav"); // We are the champions
         else playRickRoll();
@@ -934,6 +981,51 @@ void makeBorderBlue()
     leds[borderLights[i]] = CRGB::Blue;         
   }
   FastLED.show();
+}
+
+// Record what caused the latest change, for the phone ("T-pose, home!")
+void noteEvent(const char* code)
+{
+  lastEvent = code;
+  eventSeq++;
+}
+
+int colorCode(int hue)
+{
+  if(hue < HUE_WHITE_BELOW) return COLOR_WHITE;
+  if(hue > HUE_RAINBOW_ABOVE) return COLOR_RAINBOW;
+  return hue;
+}
+
+// Send the state line to the Pi when something changed (at most every 100ms) or once a second.
+// force: send now (if the TX buffer has room), e.g. right before a blocking song or button-release wait.
+void sendStateIfDue(bool force)
+{
+  if(!force && timeSinceStateSent < 100) return;
+
+  char body[64];
+  int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d",
+                   homeScore, awayScore, sportMode, volleyballScoreTo, (int)raspiOn,
+                   colorCode(map(currentHomeColor, 0, 1023, 0, 255)),
+                   colorCode(map(currentAwayColor, 0, 1023, 0, 255)),
+                   shownDigits[0], shownDigits[1], shownDigits[2], shownDigits[3],
+                   lastEvent, (int)eventSeq);
+  if(n <= 0 || n >= (int)sizeof(body)) return;
+  if(!force && timeSinceStateSent < 1000 && strcmp(body, lastStateBody) == 0) return; // nothing new
+
+  // Never block the scoreboard on the Pi: write only if the whole line fits in the TX buffer
+  if(Serial1.availableForWrite() < n + 6) return;
+
+  byte checksum = 0;
+  for(int i = 0; i < n; i++) checksum ^= body[i];
+  char tail[8];
+  snprintf(tail, sizeof(tail), "*%02X\r\n", checksum);
+  Serial1.write('$');
+  Serial1.write(body, n);
+  Serial1.write(tail);
+
+  strcpy(lastStateBody, body);
+  timeSinceStateSent = 0;
 }
 
 void playASong(int melodyArray[], int tempo)

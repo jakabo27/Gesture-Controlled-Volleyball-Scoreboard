@@ -1,0 +1,151 @@
+:root {
+  --bg: #000;
+  --ink: #f2f2f2;
+  --muted: #8a8a8a;
+  --panel: #161616;
+  --line: #2a2a2a;
+  --accent: #3d8bff;
+  --ok: #2fd27a;
+  --warn: #ffb020;
+  --bad: #ff4d4d;
+  --bar-h: 44px;
+  --foot-h: 30px;
+  color-scheme: dark;
+}
+/* Day theme: white page, dark digits. In direct sun an emissive white background at full brightness
+   reads far better than colored light on black. */
+body.theme-day {
+  --bg: #fff;
+  --ink: #111;
+  --muted: #555;
+  --panel: #f0f0f0;
+  --line: #d2d2d2;
+  --accent: #1f6feb;
+  --ok: #12a150;
+  --warn: #c77700;
+  --bad: #d92d2d;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; }
+
+/* ---- the board ------------------------------------------------------------------------------------ */
+.board {
+  position: fixed; inset: 0;
+  padding: calc(var(--bar-h) + env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+           calc(var(--foot-h) + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  display: flex; align-items: stretch;
+}
+.side {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5vh;
+  border-radius: 18px; padding: 1.5vh 1.5vw;
+  transition: background 0.4s, opacity 0.4s;
+}
+.divider { width: 2px; margin: 12% 0.6vw; background: linear-gradient(transparent, var(--line), transparent); }
+.team-label { font-weight: 900; letter-spacing: 0.22em; font-size: clamp(15px, 4.6vmin, 36px); color: var(--muted); }
+/* the team's own color as a bar above the name (the raw LED color, rainbow included) */
+.side::before { content: ''; width: min(60%, 260px); height: clamp(6px, 1.6vmin, 12px); border-radius: 99px;
+  background: var(--team, var(--line)); flex: 0 0 auto; }
+.board.bg-style .side::before { display: none; }
+.digits { width: 100%; height: auto; max-height: calc(100% - 9vmin); flex: 1 1 auto; overflow: visible; }
+
+.icon-sun, .icon-moon { display: none; }
+body.theme-day .icon-moon, body.theme-night .icon-sun { display: block; }
+
+.board.stale .side { opacity: 0.45; }
+.side.flash { animation: flash 1.1s ease-out; }
+@keyframes flash { 0% { filter: brightness(2.2); } 100% { filter: brightness(1); } }
+
+/* background color style: the half is filled with the team color */
+.board.bg-style .side { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+.board.bg-style .team-label { color: var(--label-ink, #fff); }
+
+/* ---- bars --------------------------------------------------------------------------------------------- */
+.bar { position: fixed; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); z-index: 2; }
+.bar-top { top: env(safe-area-inset-top); height: var(--bar-h); }
+.bar-bottom { bottom: env(safe-area-inset-bottom); height: var(--foot-h); justify-content: center; gap: 18px;
+  color: var(--muted); font-size: 14px; letter-spacing: 0.04em; }
+.pills, .buttons { display: flex; gap: 8px; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--ink); white-space: nowrap; }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.ok .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.pill.warn .dot { background: var(--warn); }
+.pill.bad .dot { background: var(--bad); }
+.pill.busy .dot { background: var(--accent); animation: pulse 1s infinite alternate; }
+.pill-quiet { color: var(--muted); }
+@keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
+.icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink); padding: 0; cursor: pointer; }
+.icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.warn { color: var(--warn); }
+
+/* ---- event toast -------------------------------------------------------------------------------- */
+/* sits in the top bar, between the status pills and the buttons, so it never covers the digits */
+.toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 4px); transform: translate(-50%, -12px);
+  display: flex; align-items: baseline; gap: 10px; white-space: nowrap;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 5px 18px;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; z-index: 3; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast-main { font-size: 22px; font-weight: 800; letter-spacing: 0.06em; }
+.toast-sub { font-size: 14px; color: var(--muted); }
+.toast-sub:empty { display: none; }
+
+/* ---- connect overlay ---------------------------------------------------------------------------- */
+.overlay { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.72), rgba(0,0,0,0.94)); }
+body.theme-day .overlay { background: radial-gradient(ellipse at center, rgba(255,255,255,0.8), rgba(255,255,255,0.95)); }
+.overlay[hidden] { display: none; }
+.card { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+  padding: 26px 24px 18px; text-align: center; }
+.card h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: 0.04em; }
+.card p { margin: 0 0 16px; color: var(--ink); line-height: 1.45; }
+.card .hint { font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+.primary { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 13px 26px;
+  font-weight: 700; font-size: 17px; cursor: pointer; min-width: 160px; }
+.primary:disabled { opacity: 0.55; }
+.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 12px;
+  padding: 11px 18px; cursor: pointer; }
+.link { background: none; border: 0; color: var(--accent); padding: 8px; cursor: pointer; font-size: 15px; }
+
+/* ---- settings ------------------------------------------------------------------------------------- */
+dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 20px;
+  width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 18px 20px; }
+dialog::backdrop { background: rgba(0,0,0,0.65); }
+dialog h2 { margin: 2px 0 12px; font-size: 20px; }
+fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.choice { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 12px; margin-bottom: 6px; cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--accent); background: rgba(61,139,255,0.08); }
+.choice input { margin-top: 4px; accent-color: var(--accent); }
+.choice b { display: block; }
+.choice small { color: var(--muted); }
+.toggle { display: flex; gap: 10px; align-items: center; padding: 6px 2px 4px; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.dialog-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.fineprint { color: var(--muted); font-size: 12px; margin: 12px 0 0; text-align: center; }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+@media (orientation: landscape) and (min-width: 640px) {
+  dialog { width: min(760px, calc(100vw - 24px)); }
+  dialog form { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
+  dialog h2, .toggle, .dialog-actions, .fineprint { grid-column: 1 / -1; }
+}
+
+/* Portrait: the two teams stack (the left team on top) so each score can use the full width */
+@media (orientation: portrait) {
+  :root { --bar-h: 52px; }
+  .board { flex-direction: column; }
+  .side { gap: 1vh; }
+  .divider { width: auto; height: 2px; margin: 0.8vh 12%; background: linear-gradient(90deg, transparent, var(--line), transparent); }
+  .team-label { font-size: clamp(15px, 5vw, 26px); }
+  .digits { max-height: calc(100% - 8vh); }
+  .toast { top: calc(env(safe-area-inset-top) + var(--bar-h) + 4px); }
+}
