@@ -230,22 +230,22 @@
   setInterval(sayHello, 30000);
   setTimeout(sayHello, 2500);   // once more shortly after connecting, in case the first write was lost
 
-  // Some browsers (Bluefy on iPhone) stop delivering notifications: if the score goes quiet, poll it with reads
-  // and try to re-subscribe, so the display keeps working either way.
+  // Some browsers (Bluefy on iPhone) don't deliver Bluetooth notifications reliably. The Pi sends one at least every
+  // 2 s, so if none arrives for 3.5 s, switch to polling the score with reads (4 per second) until they come back.
   let recovering = false;
+  let lastNotifyAt = 0;
   let lastResubscribe = 0;
   setInterval(async () => {
-    if (!connected || !stateChar || recovering || Date.now() - lastPacketAt < 3500) return;
+    if (!connected || !stateChar || recovering || Date.now() - lastNotifyAt < 3500) return;
     recovering = true;
     try {
       onPacket(await withTimeout(stateChar.readValue(), 3000));
-      if (Date.now() - lastResubscribe > 10000) {
+      if (Date.now() - lastResubscribe > 15000) {   // now and then, try to get real notifications back
         lastResubscribe = Date.now();
-        try { await stateChar.stopNotifications(); } catch (_) { /* already stopped */ }
-        await stateChar.startNotifications();
+        try { await stateChar.startNotifications(); } catch (_) { /* keep polling */ }
       }
-    } catch (e) { /* try again next second */ } finally { recovering = false; }
-  }, 1000);
+    } catch (e) { /* try again on the next tick */ } finally { recovering = false; }
+  }, 250);
 
   // One write at a time: Web Bluetooth rejects overlapping GATT operations, and fast taps on + would collide
   let writeChain = Promise.resolve();
@@ -480,6 +480,7 @@
       const service = await server.getPrimaryService(P.SERVICE_UUID);
       const chrc = await service.getCharacteristic(P.STATE_CHAR_UUID);
       stateChar = chrc;
+      lastNotifyAt = Date.now();
       chrc.addEventListener('characteristicvaluechanged', onValueChanged); // same function: never added twice
       await chrc.startNotifications();
       try { commandChar = await service.getCharacteristic(P.COMMAND_CHAR_UUID); } catch (_) { commandChar = null; }
@@ -529,7 +530,7 @@
     else setLink('Not connected', 'bad');
   }
 
-  function onValueChanged(ev) { onPacket(ev.target.value); }
+  function onValueChanged(ev) { lastNotifyAt = Date.now(); onPacket(ev.target.value); }
 
   function onPacket(dataView) {
     try { handleState(P.decodeState(dataView)); } catch (e) { console.warn('bad packet', e); }
@@ -690,7 +691,7 @@
   // iPhone/iPad browsers (all WebKit) have no Web Bluetooth; the Bluefy app adds it
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   // no fullscreen API on iPhone: hide the button instead of showing one that does nothing
-  if (!document.documentElement.requestFullscreen || isIOS) $('#btn-fullscreen').hidden = true;   // Bluefy's fullscreen leaves a grey overlay
+  if (!document.documentElement.requestFullscreen) $('#btn-fullscreen').hidden = true;   // e.g. Safari on iPhone has none
 
   if (!navigator.bluetooth) {
     $('#btn-connect').disabled = true;
