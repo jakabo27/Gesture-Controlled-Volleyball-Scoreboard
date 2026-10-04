@@ -59,8 +59,14 @@ check('phone commands match the Pi whitelist', () => {
   assert.strictEqual(P.commandText('TO', 25), 'TO,25');
   assert.strictEqual(P.commandText('MODE', 0), 'MODE,0');
   assert.throws(() => P.commandText('TO', 30));
+  assert.strictEqual(P.commandText('SCORE', 'HU'), 'SCORE,HU');
+  assert.strictEqual(P.commandText('TPOSE', 0), 'TPOSE,0');
+  assert.throws(() => P.commandText('SCORE', 'HP'));
+  assert.strictEqual(P.commandText('SOUND', 2), 'SOUND,2');
+  assert.throws(() => P.commandText('SOUND', 3));
+  assert.throws(() => P.commandText('TPOSE', 2));
   const pi = fs.readFileSync(path.join(__dirname, '..', 'pi', 'scoreboard_link.py'), 'utf8');
-  assert.ok(pi.includes("COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25))$')"));
+  assert.ok(pi.includes("COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25)|TPOSE,[01]|SOUND,[012]|SCORE,(HU|HD|AU|AD))$')"));
   assert.ok(pi.includes(P.COMMAND_CHAR_UUID));
 });
 

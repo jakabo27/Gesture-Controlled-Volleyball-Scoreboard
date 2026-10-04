@@ -12,8 +12,11 @@ A single static page that shows the live score on a phone over Bluetooth LE: no 
 * **Night theme:** black page with the team color brightened just enough to stand out, plus a soft glow. Switch with the sun / moon button.
 * **Colored background** (optional): each half is filled with its team color, with black or white digits, whichever has more contrast.
 * **Mirrored by default:** the phone sits on top of the scoreboard facing the person *behind* it, so AWAY is on the left and HOME on the right. Settings → "In front of the scoreboard" flips it.
-* A banner for each point ("HOME +1 · T-pose"), a Pi gestures on/off indicator, the game-to score, and a warning when data stops.
-* **Scoreboard settings** (top of Settings): sport (volleyball / tennis, with a confirmation because it resets the score) and volleyball game-to (15 / 21 / 25). These are sent to the Arduino through the Pi's command characteristic. The buttons show what the scoreboard reports, so they also reflect changes made with the physical button chords.
+* **+ / − score buttons** under each team (a big +, a small −). They run the same code as the scoreboard's own buttons; hide them in Settings.
+* **T-Pose Detection switch** (top bar): turns the Pi's gesture scoring off/on, e.g. if false positives show up in a game. The camera keeps seeing and recording gestures, but they no longer change the score. It is always on after a boot.
+* **Game clock** (top bar): starts at the first point after 0–0, freezes when the game is won, resets at 0–0. A `~` means you connected mid-game, so the start is approximate.
+* A banner for each point ("HOME +1 · T-pose"), the game-to score, and a warning when data stops.
+* **Scoreboard settings** (top of Settings): sport (volleyball / tennis, with a confirmation because it resets the score) volleyball game-to (15 / 21 / 25) and **Sound** (Effects = the usual sounds, Voice = says "Point home" / "Point away", Tones = plain beeps). These are sent to the Arduino through the Pi's command characteristic. The buttons show what the scoreboard reports, so they also reflect changes made with the physical button chords.
 
 Display settings are stored per phone in `localStorage`.
 

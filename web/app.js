@@ -11,7 +11,7 @@
 
   // ---- settings (per phone, in localStorage) ---------------------------------------------------------
   const SETTINGS_KEY = 'scoreboard.settings';
-  const DEFAULTS = { layout: 'behind', colorStyle: 'digits', theme: 'day', wakeLock: true };
+  const DEFAULTS = { layout: 'behind', colorStyle: 'digits', theme: 'day', wakeLock: true, scoreButtons: true };
   let settings = { ...DEFAULTS };
   try { settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (e) { /* defaults */ }
   function saveSettings() {
@@ -182,6 +182,7 @@
     applyTheme();
     const board = $('#board');
     board.classList.toggle('bg-style', settings.colorStyle === 'background');
+    board.classList.toggle('no-score-buttons', !settings.scoreButtons);
     const s = state || { digits: [-1, -1, -1, -1], homeColor: P.COLOR_WHITE, awayColor: P.COLOR_WHITE, mode: 0, scoreTo: 21 };
     const order = settings.layout === 'front' ? ['home', 'away'] : ['away', 'home'];
     order.forEach((team, i) => {
@@ -194,10 +195,14 @@
       $('#score-text').textContent = `Home ${state.home}, Away ${state.away}`;
       const gp = $('#gesture-pill');
       gp.hidden = false;
-      gp.className = 'pill ' + (state.piOn ? 'ok' : 'pill-quiet');
-      gp.querySelector('.pill-text').textContent = state.piOn ? 'Camera scoring on' : 'Camera scoring off';
-      gp.title = state.piOn ? 'The Pi camera is watching for T-pose (+1) and hands-on-head (−1) gestures' : 'The Pi is not connected, so only the buttons change the score';
+      gp.className = 'pill ' + (state.tposeOn ? 'ok' : 'off');
+      gp.setAttribute('aria-pressed', String(!!state.tposeOn));
+      gp.disabled = !canSend();
+      gp.title = (state.tposeOn ? 'T-Pose Detection is ON: a T-pose gives +1 and hands on head gives −1. Tap to turn it off.'
+                                : 'T-Pose Detection is OFF: gestures are ignored (the camera still records them). Tap to turn it on.') +
+                 (state.piOn ? '' : ' (The Pi is not connected right now.)');
     }
+    document.querySelectorAll('.score-btn').forEach((b) => { b.disabled = !canSend(); });
     syncBoardSettings();
   }
 
@@ -207,13 +212,49 @@
     const canSend = demo || (connected && !!commandChar);
     document.querySelectorAll('#board-settings [data-cmd]').forEach((btn) => {
       const name = btn.dataset.cmd, value = Number(btn.dataset.value);
-      const current = !state ? null : name === 'MODE' ? state.mode : state.scoreTo;
+      const current = !state ? null : name === 'MODE' ? state.mode : name === 'SOUND' ? state.soundMode : state.scoreTo;
       btn.classList.toggle('on', current === value);
       btn.disabled = !canSend || (name === 'TO' && state && state.mode === 1);
     });
     $('#board-settings-note').textContent = boardNote ||
       (canSend ? '(changes the scoreboard)' : connected ? '(update the Pi service to change these)' : '(connect to change)');
   }
+
+  function canSend() { return demo || (connected && !!commandChar); }
+
+  // One write at a time: Web Bluetooth rejects overlapping GATT operations, and fast taps on + would collide
+  let writeChain = Promise.resolve();
+  function writeCommand(text) {
+    const bytes = new TextEncoder().encode(text);
+    const job = writeChain.then(() => {
+      if (commandChar.properties && commandChar.properties.writeWithoutResponse && commandChar.writeValueWithoutResponse) {
+        return withTimeout(commandChar.writeValueWithoutResponse(bytes), 4000);
+      }
+      return withTimeout(commandChar.writeValueWithResponse(bytes), 4000);
+    });
+    writeChain = job.catch(() => {});
+    return job;
+  }
+
+  // + / - under each team: the scoreboard changes its score exactly as if its own button was pressed
+  document.querySelectorAll('.score-btn').forEach((btn) => btn.addEventListener('click', async () => {
+    const side = sides.find((x) => x.el === btn.closest('.side'));
+    if (!side || !side.team || !canSend()) return;
+    const code = (side.team === 'home' ? 'H' : 'A') + btn.dataset.act;   // HU HD AU AD
+    if (navigator.vibrate) navigator.vibrate(15);
+    if (demo) { applyDemoCommand('SCORE', code); return; }
+    try { await writeCommand(P.commandText('SCORE', code)); }
+    catch (e) { toast('NOT SENT', e.message); }
+  }));
+
+  // T-Pose Detection switch (handled by the Pi: when off, the camera still sees gestures but they don't score)
+  $('#gesture-pill').addEventListener('click', async () => {
+    if (!state || !canSend()) return;
+    const turnOn = !state.tposeOn;
+    if (demo) { applyDemoCommand('TPOSE', turnOn ? 1 : 0); return; }
+    try { await writeCommand(P.commandText('TPOSE', turnOn ? 1 : 0)); }
+    catch (e) { toast('NOT SENT', e.message); }
+  });
 
   async function sendBoardSetting(btn) {
     const name = btn.dataset.cmd, value = Number(btn.dataset.value);
@@ -224,14 +265,7 @@
     if (!connected || !commandChar) return;
     btn.classList.add('sending');
     try {
-      const bytes = new TextEncoder().encode(text);
-      // Write-without-response when the Pi offers it: the scoreboard's own state update is the confirmation, and
-      // it avoids Android's "GATT Error unknown" when the write acknowledgement is slow.
-      if (commandChar.properties && commandChar.properties.writeWithoutResponse && commandChar.writeValueWithoutResponse) {
-        await withTimeout(commandChar.writeValueWithoutResponse(bytes), 4000);
-      } else {
-        await withTimeout(commandChar.writeValueWithResponse(bytes), 4000);
-      }
+      await writeCommand(text);   // write-without-response when offered: the scoreboard's own update confirms it
       boardNote = '';   // the scoreboard's own state update confirms it
     } catch (e) {
       boardNote = '(not sent: ' + e.message + ')';
@@ -273,6 +307,7 @@
       if (side) { side.el.classList.remove('flash'); void side.el.offsetWidth; side.el.classList.add('flash'); }
     } else if (s.event === 'RS') toast('RESET', '0 – 0');
     else if (s.event === 'GT') toast(`GAME TO ${s.scoreTo}`);
+    else if (s.event === 'SM') toast('SOUND', ['effects', 'voice: point home / away', 'tones'][s.soundMode] || '');
     else if (s.event === 'MD') toast(s.mode === 1 ? 'TENNIS' : 'VOLLEYBALL', 'scoring mode');
   }
 
@@ -318,7 +353,12 @@
   }
   setInterval(renderClock, 500);
 
+  let prevTposeOn = null;
   function handleState(s) {
+    if (prevTposeOn !== null && s.tposeOn !== prevTposeOn) {
+      toast('T-POSE DETECTION ' + (s.tposeOn ? 'ON' : 'OFF'), s.tposeOn ? 'gestures score again' : 'gestures are ignored');
+    }
+    prevTposeOn = s.tposeOn;
     const isNew = lastEventSeq !== null && s.eventSeq !== lastEventSeq;
     lastEventSeq = s.eventSeq;
     state = s;
@@ -331,11 +371,23 @@
 
   // ---- connection status ------------------------------------------------------------------------------
   let lastPacketAt = 0;
+  let linkTipText = 'Bluetooth not connected';
   function setLink(text, kind) {
     const pill = $('#link-pill');
-    pill.className = 'pill ' + (kind || '');
+    pill.className = 'pill pill-bt ' + (kind || '');
     pill.querySelector('.pill-text').textContent = text;
+    linkTipText = text === 'Demo' ? 'Demo mode (no scoreboard)' : 'Bluetooth ' + text.charAt(0).toLowerCase() + text.slice(1);
+    pill.title = linkTipText;
+    pill.setAttribute('aria-label', linkTipText);
   }
+  let linkTipTimer = null;
+  $('#link-pill').addEventListener('click', () => {
+    const tip = $('#link-tip');
+    tip.textContent = linkTipText;
+    tip.hidden = false;
+    clearTimeout(linkTipTimer);
+    linkTipTimer = setTimeout(() => { tip.hidden = true; }, 2500);
+  });
   function updateStale() {
     const note = $('#stale-note');
     let msg = '';
@@ -410,6 +462,7 @@
       attempt = 0;
       hideOverlay();
       setLink('Connected', 'ok');
+      render();
       requestWakeLock();
     } catch (e) {
       console.warn('connect failed:', e);
@@ -513,7 +566,7 @@
     wantConnection = false;
     hideOverlay();
     setLink('Demo', 'ok');
-    demoState = { piOn: true, fresh: true, home: 17, away: 15, mode: 0, scoreTo: 21,
+    demoState = { piOn: true, tposeOn: true, soundMode: 0, fresh: true, home: 17, away: 15, mode: 0, scoreTo: 21,
       homeColor: DEMO_COLORS[0][0], awayColor: DEMO_COLORS[0][1], digits: [], event: 'BOOT', eventSeq: 0, ageSeconds: 0 };
     lastEventSeq = null;
     demoPublish();
@@ -524,6 +577,13 @@
   function stopDemo() { demo = false; clearInterval(demoTimer); }
   function applyDemoCommand(name, value) {
     if (name === 'MODE') { demoState.mode = value; demoState.home = demoState.away = 0; demoPublish('MD'); }
+    else if (name === 'TPOSE') { demoState.tposeOn = !!value; demoPublish(); }
+    else if (name === 'SOUND') { demoState.soundMode = value; demoPublish('SM'); }
+    else if (name === 'SCORE') {
+      const key = value[0] === 'H' ? 'home' : 'away';
+      demoState[key] = Math.max(0, demoState[key] + (value[1] === 'U' ? 1 : -1));
+      demoPublish(value);
+    }
     else { demoState.scoreTo = value; demoPublish('GT'); }
   }
 
@@ -552,6 +612,7 @@
     form.theme.value = settings.theme;
     form.colorStyle.value = settings.colorStyle;
     form.wakeLock.checked = settings.wakeLock;
+    form.scoreButtons.checked = settings.scoreButtons;
     boardNote = '';
     syncBoardSettings();
     $('#btn-disconnect').hidden = !(connected || demo || wantConnection);
@@ -561,6 +622,7 @@
     settings.theme = form.theme.value;
     settings.colorStyle = form.colorStyle.value;
     settings.wakeLock = form.wakeLock.checked;
+    settings.scoreButtons = form.scoreButtons.checked;
     saveSettings();
     if (settings.wakeLock) requestWakeLock(); else releaseWakeLock();
     render();

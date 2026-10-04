@@ -51,7 +51,7 @@ button { font: inherit; }
 .side::before { content: ''; width: min(60%, 260px); height: clamp(6px, 1.6vmin, 12px); border-radius: 99px;
   background: var(--team, var(--line)); flex: 0 0 auto; }
 .board.bg-style .side::before { display: none; }
-.digits { width: 100%; height: auto; max-height: calc(100% - 9vmin); flex: 1 1 auto; overflow: visible; }
+.digits { width: 100%; height: auto; min-height: 0; flex: 1 1 0; overflow: visible; }
 
 .icon-sun, .icon-moon { display: none; }
 body.theme-day .icon-moon, body.theme-night .icon-sun { display: block; }
@@ -79,11 +79,40 @@ body.theme-day .icon-moon, body.theme-night .icon-sun { display: block; }
 .pill.bad .dot { background: var(--bad); }
 .pill.busy .dot { background: var(--accent); animation: pulse 1s infinite alternate; }
 .pill-quiet { color: var(--muted); }
+button.pill { font: inherit; font-size: 13px; cursor: pointer; }
+/* Bluetooth: just the symbol and the status dot; tap it for the words */
+.pill-bt { padding: 5px 9px; gap: 6px; }
+.bt-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.link-tip { position: fixed; top: calc(env(safe-area-inset-top) + var(--bar-h) - 2px); left: max(10px, env(safe-area-inset-left));
+  background: var(--ink); color: var(--bg); padding: 7px 12px; border-radius: 8px; font-size: 14px; font-weight: 600; z-index: 5; }
+.link-tip[hidden] { display: none; }
+/* T-Pose Detection switch: green dot when on, a struck-through grey label when off */
+#gesture-pill.ok { color: var(--ink); }
+#gesture-pill.off { color: var(--muted); }
+#gesture-pill.off .pill-text { text-decoration: line-through; }
+#gesture-pill.off .dot { background: var(--bad); }
+#gesture-pill:disabled { opacity: 0.55; cursor: default; }
+@media (max-width: 520px) { #gesture-pill .pill-text { font-size: 12px; } }
+
+/* score buttons under each team's digits: a big +, a small - */
+.score-controls { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 2.5vmin; width: 100%; }
+.score-btn { border: 2px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 16px; cursor: pointer;
+  font-weight: 800; line-height: 1; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.score-btn.plus { flex: 0 1 62%; height: clamp(54px, 15vmin, 96px); font-size: clamp(34px, 10vmin, 64px); }
+.score-btn.minus { flex: 0 0 auto; width: clamp(46px, 11vmin, 72px); height: clamp(38px, 9vmin, 56px); font-size: clamp(26px, 6.5vmin, 40px); color: var(--muted); }
+.score-btn:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.score-btn:disabled { opacity: 0.35; cursor: default; }
+.board.no-score-buttons .score-controls { display: none; }
 .game-clock { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 22px; letter-spacing: 0.04em;
   position: absolute; left: 50%; transform: translateX(-50%); }
 .game-clock.idle { color: var(--muted); }
 .game-clock.done { color: var(--ok); }
-@media (max-width: 520px) { .game-clock { font-size: 18px; } }
+@media (max-width: 520px) {
+  .game-clock { font-size: 17px; position: static; transform: none; margin: 0 6px 0 auto; }
+  .pills { gap: 6px; }
+  .buttons { gap: 6px; }
+  .icon-btn { width: 34px; height: 34px; }
+}
 @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
 .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--line); color: var(--ink); padding: 0; cursor: pointer; }
@@ -123,6 +152,12 @@ dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--li
   width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 18px 20px; }
 dialog::backdrop { background: rgba(0,0,0,0.65); }
 dialog h2 { margin: 2px 0 12px; font-size: 20px; }
+/* title + Done stay visible while the long list scrolls */
+.dialog-head { position: sticky; top: -18px; z-index: 3; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin: -18px -20px 6px; padding: 14px 20px 8px; background: var(--panel); }
+.dialog-head h2 { margin: 0; }
+.done-top { padding: 8px 20px; }
+.seg-help { color: var(--muted); font-size: 12px; margin: -2px 0 8px; }
 fieldset { border: 0; padding: 0; margin: 0 0 14px; }
 legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
 .choice { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line);
@@ -153,7 +188,7 @@ legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter
 @media (orientation: landscape) and (min-width: 640px) {
   dialog { width: min(760px, calc(100vw - 24px)); }
   dialog form { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
-  dialog h2, .toggle, .dialog-actions, .fineprint, .span-all { grid-column: 1 / -1; }
+  dialog h2, .dialog-head, .toggle, .dialog-actions, .fineprint, .span-all { grid-column: 1 / -1; }
 }
 
 /* Portrait: the two teams stack (the left team on top) so each score can use the full width */
@@ -163,6 +198,5 @@ legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter
   .side { gap: 1vh; }
   .divider { width: auto; height: 2px; margin: 0.8vh 12%; background: linear-gradient(90deg, transparent, var(--line), transparent); }
   .team-label { font-size: clamp(15px, 5vw, 26px); }
-  .digits { max-height: calc(100% - 8vh); }
   .toast { top: calc(env(safe-area-inset-top) + var(--bar-h) + 4px); }
 }

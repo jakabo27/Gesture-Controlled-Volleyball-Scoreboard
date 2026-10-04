@@ -1139,7 +1139,16 @@ def run_inference_half(interpreter, input_size, half_frame):
     return parsed
 
 
+# Phone switch (see pi/scoreboard_link.py): while this file exists, detections are still found, logged and
+# captured (useful for reviewing false positives) but no score pulse is sent to the Arduino. /dev/shm is cleared
+# at boot, so detection starts enabled.
+TPOSE_DISABLED_FILE = os.environ.get('SCOREBOARD_TPOSE_FLAG', '/dev/shm/scoreboard_tpose_disabled')
+
+
 def pulse_pin(pin):
+    if os.path.exists(TPOSE_DISABLED_FILE):
+        print("[GESTURES OFF] detection confirmed, score pulse suppressed (phone switch)", flush=True)
+        return
     pin.value = 1
     time.sleep(0.05)
     pin.value = 0

@@ -221,7 +221,10 @@ bool blueBorderShowing = false;
 bool gameWonFirstTime = true;
 bool SDSuccess = true;
 int sportMode = 0; // 0 = Volleyball.  1 = Tennis.  2 = ??
-bool WAVMode = true; // true = play .wav files if SD card works.  False = beeps only
+bool WAVMode = true; // true = play .wav files if SD card works.  False = beeps only (follows soundMode)
+// Sound mode (3-button chord or the phone): 0 = sound effects (default), 1 = the voice says "Point home" / "Point away"
+// on + presses (PtHm.wav / PtAwy.wav), 2 = generated tones only. 0 and 1 use WAV files; 2 never touches the SD card.
+int soundMode = 0;
 int volleyballScoreTo = 21; //15, 21, or 25, defaulting to 21
 
 // Color slider ends: below HUE_WHITE_BELOW the digits are white, above HUE_RAINBOW_ABOVE they are a rainbow
@@ -297,10 +300,15 @@ void runChord(int buttons);
 void setSportMode(int mode);
 void setScoreTo(int to);
 void toggleSoundMode();
+void setSoundMode(int mode);
 void noteEvent(const char* code);
 void beep(unsigned int freq, unsigned long ms);
 void releaseSpeakerPin();
 void sendStateIfDue(bool force);
+void homeUp();
+void homeDown();
+void awayUp();
+void awayDown();
 
 void setup() {
   
@@ -412,76 +420,13 @@ void loop() {
   {
   chordButtons = 0;
   // Home Up
-  if(!digitalRead(HomeUpPin) && timeManualScoreChange > delayManualChange)
-  {
-    stopCelebration(); // any button press cuts the celebration song short
-    homeScore = homeScore + 1; // increase score
-    timeManualScoreChange = 0; // Reset timer
-    noteEvent("HU");
-
-      if (SDSuccess && WAVMode){
-        if(homeScore%3==0)      tmrpcm.play("hUp1.wav");
-        else if(homeScore%3==1) tmrpcm.play("hUp2.wav");
-        else if(homeScore%3==2) tmrpcm.play("hUp3.wav");}
-      else
-        beep(100, 100);
-    UpdateDisplay();
-    Serial.println("Home up");
-  }
+  if(!digitalRead(HomeUpPin) && timeManualScoreChange > delayManualChange) homeUp();
   // Home Down
-  if(!digitalRead(HomeDownPin) && timeManualScoreChange > delayManualChange)
-  {
-    stopCelebration();
-    homeScore = homeScore - 1; // decrease score
-    if(homeScore < 0) homeScore = 0;
-    timeManualScoreChange = 0; // Reset timer
-    noteEvent("HD");
-    UpdateDisplay();
-    if (SDSuccess && WAVMode){
-      if(homeScore%3==0)      tmrpcm.play("hDown1.wav");
-        else if(homeScore%3==1) tmrpcm.play("hDown2.wav");
-        else if(homeScore%3==2) tmrpcm.play("hDown3.wav");
-      }
-    else
-      beep(100, 50);
-    Serial.println("Home down");
-  }
+  if(!digitalRead(HomeDownPin) && timeManualScoreChange > delayManualChange) homeDown();
   // Away Up
-  if(!digitalRead(AwayUpPin) && timeManualScoreChange > delayManualChange)
-  {
-    stopCelebration();
-    awayScore = awayScore + 1; // increase score
-    timeManualScoreChange = 0; // Reset timer
-    noteEvent("AU");
-
-      if (SDSuccess && WAVMode){
-        if(awayScore%3==0)      tmrpcm.play("aUp1.wav");
-        else if(awayScore%3==1) tmrpcm.play("aUp2.wav");
-        else if (awayScore%3==2) tmrpcm.play("aUp3.wav");}
-      else
-        beep(350, 100);
-    UpdateDisplay();
-    Serial.println("Away up");
-  }
+  if(!digitalRead(AwayUpPin) && timeManualScoreChange > delayManualChange) awayUp();
   // Away Down
-  if(!digitalRead(AwayDownPin) && timeManualScoreChange > delayManualChange)
-  {
-    stopCelebration();
-    awayScore = awayScore - 1; // decrease score
-    if(awayScore < 0) awayScore = 0;
-    timeManualScoreChange = 0; // Reset timer
-    noteEvent("AD");
-    UpdateDisplay();
-
-    if (SDSuccess && WAVMode){
-      if(awayScore%3==0)      tmrpcm.play("aDown1.wav");
-        else if(awayScore%3==1) tmrpcm.play("aDown2.wav");
-        else if (awayScore%3==2) tmrpcm.play("aDown3.wav");
-      }
-    else
-      beep(75, 65);
-    Serial.println("Away down");
-  }
+  if(!digitalRead(AwayDownPin) && timeManualScoreChange > delayManualChange) awayDown();
   } // end single-button handling
 
   // Reset
@@ -687,6 +632,80 @@ void loop() {
 
 
 
+
+// ---- Score changes: the same code runs for the physical buttons and the phone (SCORE command) --------
+void homeUp()
+{
+  stopCelebration(); // any button press cuts the celebration song short
+  homeScore = homeScore + 1; // increase score
+  timeManualScoreChange = 0; // Reset timer
+  noteEvent("HU");
+
+    if (SDSuccess && WAVMode){
+      if(soundMode == 1)      tmrpcm.play("PtHm.wav");   // "Point home"
+      else if(homeScore%3==0) tmrpcm.play("hUp1.wav");
+      else if(homeScore%3==1) tmrpcm.play("hUp2.wav");
+      else if(homeScore%3==2) tmrpcm.play("hUp3.wav");}
+    else
+      beep(100, 100);
+  UpdateDisplay();
+  Serial.println("Home up");
+}
+
+void homeDown()
+{
+  stopCelebration();
+  homeScore = homeScore - 1; // decrease score
+  if(homeScore < 0) homeScore = 0;
+  timeManualScoreChange = 0; // Reset timer
+  noteEvent("HD");
+  UpdateDisplay();
+  if (SDSuccess && WAVMode){
+    if(homeScore%3==0)      tmrpcm.play("hDown1.wav");
+      else if(homeScore%3==1) tmrpcm.play("hDown2.wav");
+      else if(homeScore%3==2) tmrpcm.play("hDown3.wav");
+    }
+  else
+    beep(100, 50);
+  Serial.println("Home down");
+}
+
+void awayUp()
+{
+  stopCelebration();
+  awayScore = awayScore + 1; // increase score
+  timeManualScoreChange = 0; // Reset timer
+  noteEvent("AU");
+
+    if (SDSuccess && WAVMode){
+      if(soundMode == 1)      tmrpcm.play("PtAwy.wav");  // "Point away"
+      else if(awayScore%3==0) tmrpcm.play("aUp1.wav");
+      else if(awayScore%3==1) tmrpcm.play("aUp2.wav");
+      else if (awayScore%3==2) tmrpcm.play("aUp3.wav");}
+    else
+      beep(350, 100);
+  UpdateDisplay();
+  Serial.println("Away up");
+}
+
+void awayDown()
+{
+  stopCelebration();
+  awayScore = awayScore - 1; // decrease score
+  if(awayScore < 0) awayScore = 0;
+  timeManualScoreChange = 0; // Reset timer
+  noteEvent("AD");
+  UpdateDisplay();
+
+  if (SDSuccess && WAVMode){
+    if(awayScore%3==0)      tmrpcm.play("aDown1.wav");
+      else if(awayScore%3==1) tmrpcm.play("aDown2.wav");
+      else if (awayScore%3==2) tmrpcm.play("aDown3.wav");
+    }
+  else
+    beep(75, 65);
+  Serial.println("Away down");
+}
 
 // Update the display with new numbers and colors etc. 
 void UpdateDisplay()
@@ -954,12 +973,12 @@ void sendStateIfDue(bool force)
   if(!force && timeSinceStateSent < 100) return;
 
   char body[64];
-  int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d",
+  int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d",
                    homeScore, awayScore, sportMode, volleyballScoreTo, (int)raspiOn,
                    colorCode(map(currentHomeColor, 0, 1023, 0, 255)),
                    colorCode(map(currentAwayColor, 0, 1023, 0, 255)),
                    shownDigits[0], shownDigits[1], shownDigits[2], shownDigits[3],
-                   lastEvent, (int)eventSeq);
+                   lastEvent, (int)eventSeq, soundMode);
   if(n <= 0 || n >= (int)sizeof(body)) return;
   if(!force && timeSinceStateSent < 1000 && strcmp(body, lastStateBody) == 0) return; // nothing new
 
@@ -1100,18 +1119,28 @@ void setSportMode(int mode)
   sendStateIfDue(true);
 }
 
+// 3-button chord: effects -> "Point home/away" voice -> tones -> effects ...
 void toggleSoundMode()
 {
-  WAVMode = !WAVMode;
+  setSoundMode((soundMode + 1) % 3);
+}
+
+void setSoundMode(int mode)
+{
+  if(mode < 0 || mode > 2) return;
+  soundMode = mode;
+  WAVMode = (soundMode != 2);
   stopCelebration();
   noteEvent("SM");
-  if (SDSuccess && WAVMode)
-    tmrpcm.play("WavMd.wav"); // say "Speech Mode" or similar
+  if (SDSuccess && soundMode == 0)
+    tmrpcm.play("WavMd.wav");      // the announcement for the default sound effects
+  else if (SDSuccess && soundMode == 1)
+    tmrpcm.play("PtHm.wav");       // demo of the new sound: "Point home"
   else
   {
     for (int i = 50; i < 350; i += 10) { beep(i, 10); delay(9); } // ~0.3 s rising sweep
   }
-  Serial.println("Sound Mode Changed");
+  Serial.print("Sound mode: "); Serial.println(soundMode);
   sendStateIfDue(true);
 }
 
@@ -1122,7 +1151,7 @@ void toggleSoundMode()
 void linkLog(const char* what, const char* line)
 {
 #if LINK_DEBUG
-  if(Serial.availableForWrite() > 60) { Serial.print("[LINK] RX "); Serial.print(what); Serial.print(": "); Serial.println(line); }
+  if(Serial.availableForWrite() > (int)(strlen(what) + strlen(line) + 14)) { Serial.print("[LINK] RX "); Serial.print(what); Serial.print(": "); Serial.println(line); }
 #endif
 }
 
@@ -1141,9 +1170,29 @@ void handleCommand(char* line)
   char* comma = strchr(name, ',');
   if(!comma) { linkRxBad++; linkLog("malformed", raw); return; }
   *comma = 0;
-  int value = atoi(comma + 1);
+  const char* arg = comma + 1;
+  int value = atoi(arg);
 
-  if(strcmp(name, "MODE") == 0 && (value == 0 || value == 1))
+  if(strcmp(name, "SCORE") == 0)
+  {
+    // Phone +/- buttons: run the same code as the physical buttons (with a shorter 250ms rate limit)
+    bool ok = true;
+    if(timeManualScoreChange <= 250) { linkLog("SCORE too soon", raw); return; }   // taps closer than 250ms apart are ignored
+    if(strcmp(arg, "HU") == 0) homeUp();
+    else if(strcmp(arg, "HD") == 0) homeDown();
+    else if(strcmp(arg, "AU") == 0) awayUp();
+    else if(strcmp(arg, "AD") == 0) awayDown();
+    else ok = false;
+    if(ok) { linkRxGood++; linkLog("SCORE accepted", raw); }
+    else { linkRxBad++; linkLog("unknown SCORE", raw); }
+    return;
+  }
+  if(strcmp(name, "SOUND") == 0 && value >= 0 && value <= 2)
+  {
+    linkRxGood++; linkLog("SOUND accepted", raw);
+    if(value != soundMode) setSoundMode(value);
+  }
+  else if(strcmp(name, "MODE") == 0 && (value == 0 || value == 1))
   {
     linkRxGood++; linkLog("MODE accepted", raw);
     if(value != sportMode) setSportMode(value);
@@ -1169,7 +1218,7 @@ void serviceSerialCommands()
     else cmdActive = false; // too long: not ours
   }
 #if LINK_DEBUG
-  if(timeSinceLinkStats > 5000 && Serial.availableForWrite() > 90)
+  if(timeSinceLinkStats > 5000)   // ~6 ms of USB serial every 5 s (may briefly wait for buffer space)
   {
     timeSinceLinkStats = 0;
     Serial.print("[LINK] stats tx="); Serial.print(linkTxLines);

@@ -27,7 +27,7 @@
 | + / − | Change that team's score (held: repeats every 500ms) |
 | Reset | 0–0 and re-arm the win celebration |
 | Any 2 score buttons together | Volleyball: cycle game-to **21 → 25 → 15** (announced) |
-| Any 3 score buttons together | Toggle voice clips / plain beeps |
+| Any 3 score buttons together | Cycle the **sound mode**: sound effects (default) → voice ("Point home" / "Point away" on + presses) → plain tones |
 | All 4 score buttons together | Switch **volleyball ↔ tennis** (resets to 0–0) |
 | Color slider at either end | White, or a rainbow across the digit |
 | Phone page → Settings → Scoreboard | Sport and game-to, the same as the 4- and 2-button chords |
@@ -65,11 +65,13 @@ The fields are: the scores, the mode and game-to, whether the Pi is trusted, bot
 
 ## Commands from the Pi (phone settings)
 
-`serviceSerialCommands()` reads Serial3 RX (pin 15, from the Pi's pin 27 through 1k) without blocking. It accepts only two checksummed lines:
+`serviceSerialCommands()` reads Serial3 RX (pin 15, from the Pi's pin 27 through 1k) without blocking. It accepts only these checksummed lines:
 
 ```
 $C,MODE,<0|1>*<XOR>        sport: 0 volleyball, 1 tennis (resets the score, like the 4-button chord)
 $C,TO,<15|21|25>*<XOR>     volleyball game-to
+$C,SOUND,<0|1|2>*<XOR>       sound mode: 0 effects, 1 "Point home/away" voice, 2 tones (same as the 3-button chord)
+$C,SCORE,<HU|HD|AU|AD>*<XOR>  phone +/- buttons: the same code as the physical buttons (taps closer than 250ms are ignored)
 ```
 
 Anything else (boot noise, a half line, a wrong checksum) is ignored. The new setting shows up in the next state line, which is how the phone confirms it.

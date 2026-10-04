@@ -16,19 +16,31 @@
     <section class="side" id="side-left">
       <div class="team-label"></div>
       <svg class="digits" viewBox="-3 -3 228 186" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+      <div class="score-controls">
+        <button type="button" class="score-btn minus" data-act="D" aria-label="Subtract a point">&minus;</button>
+        <button type="button" class="score-btn plus" data-act="U" aria-label="Add a point">+</button>
+      </div>
     </section>
     <div class="divider" aria-hidden="true"></div>
     <section class="side" id="side-right">
       <div class="team-label"></div>
       <svg class="digits" viewBox="-3 -3 228 186" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+      <div class="score-controls">
+        <button type="button" class="score-btn minus" data-act="D" aria-label="Subtract a point">&minus;</button>
+        <button type="button" class="score-btn plus" data-act="U" aria-label="Add a point">+</button>
+      </div>
     </section>
   </main>
   <p id="score-text" class="visually-hidden" aria-live="polite"></p>
 
   <header class="bar bar-top">
     <div class="pills">
-      <span id="link-pill" class="pill"><span class="dot"></span><span class="pill-text">Not connected</span></span>
-      <span id="gesture-pill" class="pill pill-quiet" hidden><span class="dot"></span><span class="pill-text">Camera scoring</span></span>
+      <button id="link-pill" type="button" class="pill pill-bt" aria-label="Bluetooth status">
+        <svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg>
+        <span class="dot"></span><span class="pill-text visually-hidden">Not connected</span>
+      </button>
+      <button id="gesture-pill" type="button" class="pill pill-quiet" aria-pressed="true" hidden><span class="dot"></span><span class="pill-text">T-Pose Detection</span></button>
+      <div id="link-tip" class="link-tip" role="status" hidden></div>
     </div>
     <div id="game-clock" class="game-clock idle" hidden title="Game time: starts with the first point after 0–0" aria-label="Game clock">0:00</div>
     <div class="buttons">
@@ -64,7 +76,10 @@
 
   <dialog id="settings">
     <form method="dialog">
-      <h2>Settings</h2>
+      <div class="dialog-head">
+        <h2>Settings</h2>
+        <button value="close" class="primary done-top">Done</button>
+      </div>
 
       <fieldset id="board-settings" class="span-all">
         <legend>Scoreboard <span id="board-settings-note" class="legend-note"></span></legend>
@@ -83,6 +98,15 @@
             <button type="button" data-cmd="TO" data-value="25">25</button>
           </div>
         </div>
+        <div class="seg-row">
+          <span class="seg-label">Sound</span>
+          <div class="seg" role="group" aria-label="Scoring sound">
+            <button type="button" data-cmd="SOUND" data-value="0" title="The scoreboard's own sound effects">Effects</button>
+            <button type="button" data-cmd="SOUND" data-value="1" title="The voice says Point home / Point away">Voice</button>
+            <button type="button" data-cmd="SOUND" data-value="2" title="Simple beeps, no SD card sounds">Tones</button>
+          </div>
+        </div>
+        <p class="seg-help">Effects: the usual sounds &middot; Voice: says &ldquo;Point home&rdquo; / &ldquo;Point away&rdquo; &middot; Tones: plain beeps</p>
       </fieldset>
 
 
@@ -111,6 +135,7 @@
       </fieldset>
 
 
+      <label class="toggle"><input type="checkbox" name="scoreButtons"> Show the + / − score buttons</label>
       <label class="toggle"><input type="checkbox" name="wakeLock"> Keep the screen on</label>
 
       <div class="dialog-actions">

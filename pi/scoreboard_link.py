@@ -43,8 +43,28 @@ STATE_CHAR_UUID = 'b3710002-1a78-4239-800f-cf4fa9544bbe'  # read + notify, PACKE
 COMMAND_CHAR_UUID = 'b3710003-1a78-4239-800f-cf4fa9544bbe'  # write: ASCII command, COMMAND_RE below
 SECURE_WRITES = os.environ.get('SCOREBOARD_BLE_SECURE', '0') == '1'
 
-# The only commands the phone may send (sport mode, volleyball game-to). Scores are not remote-controllable yet.
-COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25))$')
+# The only commands the phone may send: sport mode, volleyball game-to, score +/- (forwarded to the Arduino) and
+# TPOSE,0|1 (handled here: switches the Pi's gesture scoring off/on, never forwarded).
+COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25)|TPOSE,[01]|SOUND,[012]|SCORE,(HU|HD|AU|AD))$')
+
+# T-pose detection switch shared with the vision engine (PoseEstimationJT_Optimized.py). The file's presence means
+# "disabled". /dev/shm is a RAM disk, so every boot starts with detection enabled.
+TPOSE_DISABLED_FILE = os.environ.get('SCOREBOARD_TPOSE_FLAG', '/dev/shm/scoreboard_tpose_disabled')
+
+
+def tpose_enabled():
+    return not os.path.exists(TPOSE_DISABLED_FILE)
+
+
+def set_tpose_enabled(on):
+    if on:
+        try:
+            os.remove(TPOSE_DISABLED_FILE)
+        except FileNotFoundError:
+            pass
+    else:
+        with open(TPOSE_DISABLED_FILE, 'w') as f:
+            f.write('disabled from the phone' + chr(10))
 
 FRESH_SECONDS = 3.0          # Arduino data older than this is flagged stale (it sends at least once a second)
 KEEPALIVE_SECONDS = 2.0      # notify at least this often so the phone can tell a dead link from a quiet game
@@ -58,7 +78,8 @@ EVENTS = ['', 'BOOT', 'HU', 'HD', 'AU', 'AD', 'HP', 'AP', 'HC', 'AC', 'RS', 'HW'
 
 # BLE state packet, 17 bytes (fits the default ATT MTU of 23 without a long read). Little endian.
 #   B  version (1)
-#   B  flags: bit0 Pi heartbeat accepted by the Arduino (gestures live), bit1 Arduino data fresh
+#   B  flags: bit0 Pi heartbeat accepted by the Arduino (gestures live), bit1 Arduino data fresh,
+#      bit2 T-pose detection enabled, bits 3-4 sound mode
 #   B  home score     B  away score     (clamped to 0-255)
 #   B  sport mode (0 volleyball, 1 tennis)
 #   B  game-to score
@@ -71,6 +92,8 @@ PACKET_FORMAT = '<BBBBBBHH4bBBB'
 PACKET_VERSION = 1
 FLAG_PI_ON = 0x01
 FLAG_FRESH = 0x02
+FLAG_TPOSE_ON = 0x04   # T-pose detection enabled (the Pi's own switch, see TPOSE_DISABLED_FILE)
+FLAG_SOUND_SHIFT = 3   # bits 3-4: sound mode 0 effects, 1 'Point home/away' voice, 2 tones
 
 
 def log(msg):
@@ -93,17 +116,18 @@ def parse_state_line(line):
     if checksum != expected:
         return None
     f = body.split(',')
-    if len(f) != 14 or f[0] != 'S':
+    if len(f) not in (14, 15) or f[0] != 'S':     # 15th field (sound mode) is absent on older firmware
         return None
     try:
         n = [int(x) for x in f[1:12]]
         seq = int(f[13])
+        sound = int(f[14]) if len(f) == 15 else 0
     except ValueError:
         return None
     return {
         'home': n[0], 'away': n[1], 'mode': n[2], 'score_to': n[3], 'pi_on': bool(n[4]),
         'home_color': n[5], 'away_color': n[6], 'digits': n[7:11],
-        'event': f[12], 'event_seq': seq & 0xFF,
+        'event': f[12], 'event_seq': seq & 0xFF, 'sound_mode': max(0, min(2, sound)),
     }
 
 
@@ -122,9 +146,10 @@ def build_command(text):
 def pack_state(state, age_s):
     """Pack a parsed state (or None = nothing received yet) into the BLE packet."""
     if state is None:
-        return struct.pack(PACKET_FORMAT, PACKET_VERSION, 0, 0, 0, 0, 21,
+        return struct.pack(PACKET_FORMAT, PACKET_VERSION, FLAG_TPOSE_ON if tpose_enabled() else 0, 0, 0, 0, 21,
                            COLOR_WHITE, COLOR_WHITE, -1, 0, -1, 0, 0, 0, 255)
-    flags = (FLAG_PI_ON if state['pi_on'] else 0) | (FLAG_FRESH if age_s < FRESH_SECONDS else 0)
+    flags = ((FLAG_PI_ON if state['pi_on'] else 0) | (FLAG_FRESH if age_s < FRESH_SECONDS else 0) |
+             (FLAG_TPOSE_ON if tpose_enabled() else 0) | (state.get('sound_mode', 0) << FLAG_SOUND_SHIFT))
 
     def u8(v):
         return max(0, min(255, v))
@@ -159,6 +184,14 @@ class LinkState:
         line = build_command(text)
         if line is None:
             return 'command not allowed: %r' % text
+        if text.strip().startswith('TPOSE,'):
+            on = text.strip().endswith('1')
+            try:
+                set_tpose_enabled(on)
+            except OSError as e:
+                return 'cannot change the T-pose switch: %s' % e
+            log('T-pose detection %s (from the phone)' % ('ENABLED' if on else 'DISABLED'))
+            return None
         with self._lock:
             ser = self.serial
         if ser is None:
