@@ -11,7 +11,7 @@
 
   // ---- settings (per phone, in localStorage) ---------------------------------------------------------
   const SETTINGS_KEY = 'scoreboard.settings';
-  const DEFAULTS = { layout: 'behind', colorStyle: 'digits', theme: 'day', wakeLock: true, scoreButtons: true };
+  const DEFAULTS = { layout: 'behind', colorStyle: 'digits', theme: 'day', wakeLock: true, scoreButtons: true, autoReconnect: false };
   let settings = { ...DEFAULTS };
   try { settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (e) { /* defaults */ }
   function saveSettings() {
@@ -503,12 +503,19 @@
 
   function scheduleReconnect() {
     if (!wantConnection) return;
+    if (!settings.autoReconnect) {   // manual mode: one clear message, no retry loop, no surprise pairing prompts
+      wantConnection = false;
+      connected = false;
+      setLink('Not connected', 'bad');
+      showOverlay('Disconnected. Tap Connect to reconnect.');
+      return;
+    }
     attempt++;
     setLink('Reconnecting…', 'busy');
     clearTimeout(retryTimer);
     retryTimer = setTimeout(connect, Math.min(1000 * 2 ** (attempt - 1), 10000));
     // Reconnect the moment the scoreboard is heard again, where the browser supports it
-    if (device.watchAdvertisements && !device.watchingAdvertisements) device.watchAdvertisements().catch(() => {});
+    if (settings.autoReconnect && device.watchAdvertisements && !device.watchingAdvertisements) device.watchAdvertisements().catch(() => {});
   }
 
   function onAdvertisement() {
@@ -641,6 +648,7 @@
     form.colorStyle.value = settings.colorStyle;
     form.wakeLock.checked = settings.wakeLock;
     form.scoreButtons.checked = settings.scoreButtons;
+    form.autoReconnect.checked = settings.autoReconnect;
     boardNote = '';
     syncBoardSettings();
     $('#btn-disconnect').hidden = !(connected || demo || wantConnection);
@@ -651,6 +659,7 @@
     settings.colorStyle = form.colorStyle.value;
     settings.wakeLock = form.wakeLock.checked;
     settings.scoreButtons = form.scoreButtons.checked;
+    settings.autoReconnect = form.autoReconnect.checked;
     saveSettings();
     if (settings.wakeLock) requestWakeLock(); else releaseWakeLock();
     render();
@@ -696,7 +705,14 @@
   }
 
   if (new URLSearchParams(location.search).has('demo')) startDemo();
-  else tryRememberedDevice();
+  else if (settings.autoReconnect) tryRememberedDevice();
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // A new version took over: reload to use it, but never while connected (a reload drops the Bluetooth link)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !connected && !connecting && !demo) location.reload();
+    });
+  }
 })();

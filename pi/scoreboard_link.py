@@ -72,6 +72,9 @@ def set_tpose_enabled(on):
 # is a courtesy lock, not a secret.
 AUTH_TOKEN = 'tpose-scoreboard-page-v1'
 AUTH_SECONDS = int(os.environ.get('SCOREBOARD_AUTH_SECONDS', '8'))
+# The page repeats its hello every 30 s. A connected phone that goes silent for this long (page closed, phone
+# asleep, browser crashed) is dropped, so a dead connection can never keep the scoreboard from other phones.
+HELLO_TIMEOUT_SECONDS = int(os.environ.get('SCOREBOARD_HELLO_TIMEOUT', '75'))
 
 FRESH_SECONDS = 3.0          # Arduino data older than this is flagged stale (it sends at least once a second)
 KEEPALIVE_SECONDS = 2.0      # notify at least this often so the phone can tell a dead link from a quiet game
@@ -291,7 +294,7 @@ def run_ble(link):
     ADV_IFACE = 'org.bluez.LEAdvertisement1'
     APP_PATH = '/com/scoreboard/link'
 
-    authorized = set()      # device paths that said HELLO (cleared when they disconnect)
+    authorized = {}         # device path -> time.monotonic() of its last HELLO (cleared when it disconnects)
 
     class InvalidArgs(dbus.exceptions.DBusException):
         _dbus_error_name = 'org.freedesktop.DBus.Error.InvalidArgs'
@@ -403,8 +406,8 @@ def run_ble(link):
             device = str(options.get('device', ''))
             if text.strip() == 'HELLO,' + AUTH_TOKEN:
                 if device not in authorized:
-                    authorized.add(device)
                     log('phone authorized (%s)' % (device or 'unknown device'))
+                authorized[device] = time.monotonic()
                 return
             if AUTH_SECONDS > 0 and device not in authorized:
                 log('refused a command from a phone that has not said hello (%s)' % (device or 'unknown device'))
@@ -444,6 +447,43 @@ def run_ble(link):
     adv = Advertisement()
 
     ble = {'adapter': None, 'app_ok': False, 'adv_ok': False, 'pending': False}
+
+    def prepare_adapter(adapter):
+        """Manual-only Bluetooth: never pair or bond (nothing here needs encryption), and forget any bond left over
+        from earlier sessions. A stale bond makes the Pi ask a phone that has since 'forgotten' it to pair again,
+        which shows up as an endless stream of pairing requests on iPhones."""
+        try:
+            dbus.Interface(bus.get_object(BLUEZ, adapter), PROP_IFACE).Set(ADAPTER_IFACE, 'Pairable', dbus.Boolean(False))
+        except dbus.exceptions.DBusException as e:
+            log('could not turn pairing off: %s' % e.get_dbus_name())
+        try:
+            om = dbus.Interface(bus.get_object(BLUEZ, '/'), OM_IFACE)
+            adapter_if = dbus.Interface(bus.get_object(BLUEZ, adapter), ADAPTER_IFACE)
+            for path, ifaces in om.GetManagedObjects().items():
+                if DEVICE_IFACE in ifaces and str(path).startswith(str(adapter) + '/'):
+                    if ifaces[DEVICE_IFACE].get('Paired') or ifaces[DEVICE_IFACE].get('Bonded'):
+                        adapter_if.RemoveDevice(path)
+                        log('forgot old bond %s' % path)
+        except dbus.exceptions.DBusException as e:
+            log('could not clear old bonds: %s' % e.get_dbus_name())
+
+    def sweep_idle():
+        """Drop connected phones whose page stopped saying hello (see HELLO_TIMEOUT_SECONDS)."""
+        if HELLO_TIMEOUT_SECONDS <= 0:
+            return True
+        now = time.monotonic()
+        try:
+            om = dbus.Interface(bus.get_object(BLUEZ, '/'), OM_IFACE)
+            for path, ifaces in om.GetManagedObjects().items():
+                dev = ifaces.get(DEVICE_IFACE)
+                if dev is not None and dev.get('Connected') and str(path) in authorized \
+                        and now - authorized[str(path)] > HELLO_TIMEOUT_SECONDS:
+                    log('disconnecting %s: no hello for %d s' % (path, HELLO_TIMEOUT_SECONDS))
+                    authorized.pop(str(path), None)
+                    dbus.Interface(bus.get_object(BLUEZ, path), DEVICE_IFACE).Disconnect()
+        except dbus.exceptions.DBusException:
+            pass
+        return True
 
     def find_adapter():
         om = dbus.Interface(bus.get_object(BLUEZ, '/'), OM_IFACE)
@@ -489,6 +529,7 @@ def run_ble(link):
                 props = dbus.Interface(bus.get_object(BLUEZ, ble['adapter']), PROP_IFACE)
                 props.Set(ADAPTER_IFACE, 'Powered', dbus.Boolean(True))
                 props.Set(ADAPTER_IFACE, 'Alias', dbus.String(BLE_NAME))
+                prepare_adapter(ble['adapter'])
                 log('adapter %s' % ble['adapter'])
             if not ble['app_ok']:
                 ble['pending'] = True
@@ -532,6 +573,12 @@ def run_ble(link):
         return False
 
     def on_props_changed(interface, changed, invalidated, path=None):
+        try:
+            handle_props_changed(interface, changed, path)
+        except Exception as e:      # e.g. bluetoothd just crashed: ensure_registered() recovers when it is back
+            log('property change handler: %s' % e)
+
+    def handle_props_changed(interface, changed, path):
         if interface == DEVICE_IFACE and 'Connected' in changed:
             if changed['Connected']:
                 log('phone connected (%s)' % path)
@@ -539,7 +586,7 @@ def run_ble(link):
                     GLib.timeout_add_seconds(AUTH_SECONDS, check_authorized, str(path))
             else:
                 log('phone disconnected (%s)' % path)
-                authorized.discard(str(path))
+                authorized.pop(str(path), None)
                 readvertise()
 
     bus.add_signal_receiver(on_owner_changed, signal_name='NameOwnerChanged',
@@ -564,7 +611,8 @@ def run_ble(link):
 
     ensure_registered()
     GLib.timeout_add_seconds(BLE_RETRY_SECONDS, ensure_registered)
-    GLib.timeout_add(200, tick)
+    GLib.timeout_add(50, tick)            # snappy updates: notify within 50 ms of a change
+    GLib.timeout_add_seconds(10, sweep_idle)
     GLib.MainLoop().run()
 
 
