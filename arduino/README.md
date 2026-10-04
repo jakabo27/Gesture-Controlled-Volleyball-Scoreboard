@@ -18,7 +18,7 @@
 | 42 / 43 | From Pi: Home −1 / Away −1 (cobra) |
 | 46 | From Pi: heartbeat |
 | 44 | From Pi: spare |
-| 18 / 19 (TX1 / RX1) | State line to the Pi (phone display), 38400 baud. TX1 goes through a 10k/20k divider to the Pi's 3.3V RX |
+| 14 / 15 (TX3 / RX3) | State line to the Pi (phone display), 38400 baud. TX3 goes through a 5.1k/10k divider to the Pi's 3.3V RX |
 
 ## Controls
 
@@ -55,7 +55,7 @@ In tennis mode the digits show 0 / 15 / 30 / 40, and deuce and advantage are spe
 
 ## State broadcast for the phone display
 
-Once per change (at most every 100ms) and at least once a second, `sendStateIfDue()` writes one checksummed line on Serial1:
+Once per change (at most every 100ms) and at least once a second, `sendStateIfDue()` writes one checksummed line on Serial3:
 
 ```
 $S,<home>,<away>,<sportMode>,<scoreTo>,<piOn>,<homeColor>,<awayColor>,<d0>,<d1>,<d2>,<d3>,<event>,<eventSeq>*<XOR>
@@ -65,7 +65,7 @@ The fields are: the scores, the mode and game-to, whether the Pi is trusted, bot
 
 ## Commands from the Pi (phone settings)
 
-`serviceSerialCommands()` reads Serial1 RX (pin 19, from the Pi's pin 27 through 1k) without blocking. It accepts only two checksummed lines:
+`serviceSerialCommands()` reads Serial3 RX (pin 15, from the Pi's pin 27 through 1k) without blocking. It accepts only two checksummed lines:
 
 ```
 $C,MODE,<0|1>*<XOR>        sport: 0 volleyball, 1 tennis (resets the score, like the 4-button chord)

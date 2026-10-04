@@ -228,7 +228,7 @@ int volleyballScoreTo = 21; //15, 21, or 25, defaulting to 21
 #define HUE_WHITE_BELOW 10
 #define HUE_RAINBOW_ABOVE 240
 
-// State broadcast to the Raspberry Pi on Serial1 (TX1 = pin 18), one way: the Pi forwards it to the phone.
+// State broadcast to the Raspberry Pi on Serial3 (TX3 = pin 14), one way: the Pi forwards it to the phone.
 // The Arduino never waits on the Pi: a line is only written when the TX buffer has room for all of it,
 // otherwise it is skipped and sent on a later loop. One line per change (at most every 100ms) and at
 // least once a second:
@@ -236,6 +236,11 @@ int volleyballScoreTo = 21; //15, 21, or 25, defaulting to 21
 // Colors: 0-255 = FastLED hue, 256 = white, 257 = rainbow. d0-d3 = digitTable index of the home tens,
 // home ones, away tens and away ones digits as drawn (-1 = blank). XOR = hex XOR of the chars between $ and *.
 #define PI_LINK_BAUD 38400
+// Debug output on USB serial (115200): "[LINK] ..." lines for the state broadcast and Pi commands. Set to 0 to silence.
+// Lines are only printed when the USB TX buffer has room, so debugging can never stall the scoreboard.
+#define LINK_DEBUG 1
+unsigned long linkTxLines = 0, linkTxSkipped = 0, linkRxBytes = 0, linkRxGood = 0, linkRxBad = 0;
+elapsedMillis timeSinceLinkStats;
 #define COLOR_WHITE 256
 #define COLOR_RAINBOW 257
 elapsedMillis timeSinceStateSent;
@@ -268,7 +273,7 @@ long melodyWholeNote = 0;
 unsigned long melodyNoteMs = 0;
 elapsedMillis melodyTimer;
 
-// Commands from the Pi on Serial1 RX (phone settings): "$C,<name>,<value>*<XOR>"
+// Commands from the Pi on Serial3 RX (phone settings): "$C,<name>,<value>*<XOR>"
 char cmdBuf[32];
 byte cmdLen = 0;
 bool cmdActive = false;
@@ -300,7 +305,7 @@ void sendStateIfDue(bool force);
 void setup() {
   
   Serial.begin(115200);
-  Serial1.begin(PI_LINK_BAUD); // state broadcast to the Pi (see sendStateIfDue)
+  Serial3.begin(PI_LINK_BAUD); // state broadcast to the Pi (see sendStateIfDue)
 
   FastLED.addLeds<NEOPIXEL, DATA_PIN> (leds, NUM_LEDS);
   FastLED.setBrightness(10);
@@ -959,18 +964,25 @@ void sendStateIfDue(bool force)
   if(!force && timeSinceStateSent < 1000 && strcmp(body, lastStateBody) == 0) return; // nothing new
 
   // Never block the scoreboard on the Pi: write only if the whole line fits in the TX buffer
-  if(Serial1.availableForWrite() < n + 6) return;
+  if(Serial3.availableForWrite() < n + 6) { linkTxSkipped++; return; }
 
   byte checksum = 0;
   for(int i = 0; i < n; i++) checksum ^= body[i];
   char tail[8];
   snprintf(tail, sizeof(tail), "*%02X\r\n", checksum);
-  Serial1.write('$');
-  Serial1.write(body, n);
-  Serial1.write(tail);
+  Serial3.write('$');
+  Serial3.write(body, n);
+  Serial3.write(tail);
 
   strcpy(lastStateBody, body);
   timeSinceStateSent = 0;
+  linkTxLines++;
+#if LINK_DEBUG
+  if(Serial.availableForWrite() > n + 24)
+  {
+    Serial.print("[LINK] TX $"); Serial.print(body); Serial.print("*"); Serial.println(checksum, HEX);
+  }
+#endif
 }
 
 // ---- Celebration song (non-blocking) ---------------------------------------------------------------
@@ -1107,40 +1119,64 @@ void toggleSoundMode()
 // "$C,MODE,<0|1>*<XOR>" sport mode (resets the score, like the 4-button chord)
 // "$C,TO,<15|21|25>*<XOR>" volleyball game-to
 // XOR = hex XOR of the characters between $ and *. Anything malformed is ignored.
+void linkLog(const char* what, const char* line)
+{
+#if LINK_DEBUG
+  if(Serial.availableForWrite() > 60) { Serial.print("[LINK] RX "); Serial.print(what); Serial.print(": "); Serial.println(line); }
+#endif
+}
+
 void handleCommand(char* line)
 {
+  char raw[sizeof(cmdBuf)];
+  strncpy(raw, line, sizeof(raw) - 1); raw[sizeof(raw) - 1] = 0;
   char* star = strrchr(line, '*');
-  if(!star || strlen(star + 1) != 2) return;
+  if(!star || strlen(star + 1) != 2) { linkRxBad++; linkLog("no checksum", raw); return; }
   *star = 0;
   byte checksum = 0;
   for(char* p = line; *p; p++) checksum ^= *p;
-  if(strtol(star + 1, NULL, 16) != checksum) return;
-  if(strncmp(line, "C,", 2) != 0) return;
+  if(strtol(star + 1, NULL, 16) != checksum) { linkRxBad++; linkLog("bad checksum", raw); return; }
+  if(strncmp(line, "C,", 2) != 0) { linkRxBad++; linkLog("not a command", raw); return; }
   char* name = line + 2;
   char* comma = strchr(name, ',');
-  if(!comma) return;
+  if(!comma) { linkRxBad++; linkLog("malformed", raw); return; }
   *comma = 0;
   int value = atoi(comma + 1);
 
   if(strcmp(name, "MODE") == 0 && (value == 0 || value == 1))
   {
+    linkRxGood++; linkLog("MODE accepted", raw);
     if(value != sportMode) setSportMode(value);
   }
   else if(strcmp(name, "TO") == 0 && (value == 15 || value == 21 || value == 25))
   {
+    linkRxGood++; linkLog("TO accepted", raw);
     if(value != volleyballScoreTo) setScoreTo(value);
   }
+  else { linkRxBad++; linkLog("unknown command", raw); }
 }
 
 void serviceSerialCommands()
 {
-  while(Serial1.available())
+  while(Serial3.available())
   {
-    char c = Serial1.read();
+    char c = Serial3.read();
+    linkRxBytes++;
     if(c == '$') { cmdActive = true; cmdLen = 0; }
     else if(!cmdActive) continue;
     else if(c == '\r' || c == '\n') { cmdBuf[cmdLen] = 0; cmdActive = false; handleCommand(cmdBuf); }
     else if(cmdLen < sizeof(cmdBuf) - 1) cmdBuf[cmdLen++] = c;
     else cmdActive = false; // too long: not ours
   }
+#if LINK_DEBUG
+  if(timeSinceLinkStats > 5000 && Serial.availableForWrite() > 90)
+  {
+    timeSinceLinkStats = 0;
+    Serial.print("[LINK] stats tx="); Serial.print(linkTxLines);
+    Serial.print(" txSkipped="); Serial.print(linkTxSkipped);
+    Serial.print(" rxBytes="); Serial.print(linkRxBytes);
+    Serial.print(" cmdOk="); Serial.print(linkRxGood);
+    Serial.print(" cmdBad="); Serial.println(linkRxBad);
+  }
+#endif
 }

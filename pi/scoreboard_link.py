@@ -1,7 +1,7 @@
 """
 Scoreboard link: Arduino state (UART) -> Bluetooth LE -> phone.
 
-The Arduino broadcasts its full state once per change and at least once a second on Serial1 (38400 8N1):
+The Arduino broadcasts its full state once per change and at least once a second on Serial3 (38400 8N1):
 
     $S,<home>,<away>,<sportMode>,<scoreTo>,<piOn>,<homeColor>,<awayColor>,<d0>,<d1>,<d2>,<d3>,<event>,<eventSeq>*<XOR>
 

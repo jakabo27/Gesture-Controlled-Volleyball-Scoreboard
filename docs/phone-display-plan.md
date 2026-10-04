@@ -29,13 +29,13 @@ Arduino Mega ──UART (one-way state broadcast)──▶ Pi 4 ──BLE GATT n
 
 ### 1. Arduino → Pi state link (UART)
 
-* Mega **Serial1** at **38400 baud** (0.2% baud error on a 16MHz AVR, against 2.1% at 115200).
+* Mega **Serial3** at **38400 baud** (0.2% baud error on a 16MHz AVR, against 2.1% at 115200).
 * The Arduino sends one checksummed line on every change (rate-limited to 100ms, because the color sliders call `UpdateDisplay()` repeatedly) and once a second regardless:
   `$S,<home>,<away>,<sportMode>,<scoreTo>,<piOn>,<homeColor>,<awayColor>,<d0>,<d1>,<d2>,<d3>,<event>,<eventSeq>*<xor>`
 * Colors are the slider's FastLED hue (0–255), 256 for white or 257 for rainbow. `d0`–`d3` are the glyphs `UpdateDisplay()` actually drew (tennis `Ad`, blank leading zero = −1), so the phone never re-implements scoring rules.
 * `event` records what caused the last change (`HU`/`HD`/`AU`/`AD` buttons, `HP`/`AP` T-pose, `HC`/`AC` cobra, `RS`, `HW`/`AW` win, `MD`, `GT`, `SM`), and `eventSeq` counts them, so the phone can flash "HOME +1 · T-pose" once.
 * The state is also sent right before the blocking win song and the button-release waits, so the phone sees the winning point immediately.
-* **Never blocks:** the sketch checks `Serial1.availableForWrite()` first and skips a line rather than waiting, so a missing Pi changes nothing.
+* **Never blocks:** the sketch checks `Serial3.availableForWrite()` first and skips a line rather than waiting, so a missing Pi changes nothing.
 
 ### 2. Wiring
 
@@ -43,8 +43,8 @@ The Pi 4 has extra PL011 UARTs. The Arduino goes on **UART2 (GPIO 0/1)**, so Blu
 
 | Wire | From | Via | To |
 |---|---|---|---|
-| State (Arduino → Pi) | Mega pin 18 (TX1) | 10k series, 20k to GND (5V → 3.3V) | Pi pin 28 (GPIO 1, RXD2) |
-| Commands (Pi → Arduino, later) | Pi pin 27 (GPIO 0, TXD2) | 1k series (protection only) | Mega pin 19 (RX1) |
+| State (Arduino → Pi) | Mega pin 14 (TX3) | 5.1k series, 10k to GND (5V → 3.3V) | Pi pin 28 (GPIO 1, RXD2) |
+| Commands (Pi → Arduino, later) | Pi pin 27 (GPIO 0, TXD2) | 1k series (protection only) | Mega pin 15 (RX3) |
 | Ground | existing common ground | | |
 
 The Pi's firmware probes GPIO 0/1 for a HAT EEPROM at boot. The Mega will see a few junk bytes then, and the checksums reject them.
@@ -86,7 +86,7 @@ The Pi's firmware probes GPIO 0/1 for a HAT EEPROM at boot. The Mega will see a 
 Do it in this order; each step can be checked before the next. The scoreboard keeps working at every step.
 
 1. **Flash the Arduino** with the `phone-display` branch sketch. Nothing changes on the scoreboard. With USB connected, the serial monitor still shows the old debug output.
-2. **Wire it** (both wires, see the table above). Use a 10k + 20k divider on the Mega TX1 → Pi pin 28 line (two 10k in series work for the 20k). Measure the divider output with a multimeter before connecting it to the Pi: it should idle at ~3.3V, never 5V.
+2. **Wire it** (both wires, see the table above). Use a 5.1k + 10k divider on the Mega TX3 (pin 14) → Pi pin 28 line (5.1k in series from the Mega, 10k from the Pi pin to GND). Measure the divider output with a multimeter before connecting it to the Pi: it should idle at ~3.3V, never 5V.
 3. **Pi boot config.** Back up `/boot/config.txt`, replace `dtoverlay=disable-bt` with `dtoverlay=uart2`, then reboot. Check that SSH and Wi-Fi still work, `ls -l /dev/ttyAMA1` exists, and `journalctl -u scoreboard` shows the usual ~2.9 fps.
 4. **Check the UART:** `sudo systemctl stop scoreboard-link 2>/dev/null; python3 -c "import serial; s=serial.Serial('/dev/ttyAMA1',38400,timeout=2); print(s.readline())"` should print a `$S,...` line within a second.
 5. **Install the link service and the delayed Bluetooth start** (run from a copy of the repo's `pi/` folder on the Pi):
@@ -104,7 +104,7 @@ Do it in this order; each step can be checked before the next. The scoreboard ke
 7. **The page:** merge to `main` (the Pages workflow publishes `web/`), open it in Chrome, Connect.
 8. **Reboot test:** power-cycle the whole scoreboard. Scoring should start as before (Bluetooth doesn't start until 20s), and the phone should reconnect by itself.
 
-**Rollback:** `config.txt` back to `dtoverlay=disable-bt` (on the Pi, or from a PC: `/boot` is FAT), and `sudo systemctl disable --now scoreboard-link scoreboard-bt.timer`. The Arduino firmware doesn't need to be rolled back: with nothing on TX1 it behaves exactly as before.
+**Rollback:** `config.txt` back to `dtoverlay=disable-bt` (on the Pi, or from a PC: `/boot` is FAT), and `sudo systemctl disable --now scoreboard-link scoreboard-bt.timer`. The Arduino firmware doesn't need to be rolled back: with nothing on TX3 it behaves exactly as before.
 
 ## Risks to test early
 
