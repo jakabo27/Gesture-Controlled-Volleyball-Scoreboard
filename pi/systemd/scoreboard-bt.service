@@ -5,5 +5,7 @@ Description=Start Bluetooth for the phone display (delayed by scoreboard-bt.time
 
 [Service]
 Type=oneshot
+# The radio can come up soft-blocked after the overlay change (BlueZ then says "Blocked"), so unblock it first
+ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
 ExecStart=/bin/systemctl start hciuart.service bluetooth.service
 RemainAfterExit=yes

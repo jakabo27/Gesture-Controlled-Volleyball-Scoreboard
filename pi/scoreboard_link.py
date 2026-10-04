@@ -302,7 +302,7 @@ def run_ble(link):
 
         def properties(self):
             return {GATT_CHRC_IFACE: {
-                'Service': self.service.path, 'UUID': STATE_CHAR_UUID,
+                'Service': dbus.ObjectPath(self.service.path), 'UUID': STATE_CHAR_UUID,
                 'Flags': dbus.Array(['read', 'notify'], signature='s')}}
 
         @dbus.service.method(PROP_IFACE, in_signature='s', out_signature='a{sv}')
@@ -346,7 +346,7 @@ def run_ble(link):
         def properties(self):
             flags = ['encrypt-write'] if SECURE_WRITES else ['write']
             return {GATT_CHRC_IFACE: {
-                'Service': self.service.path, 'UUID': COMMAND_CHAR_UUID,
+                'Service': dbus.ObjectPath(self.service.path), 'UUID': COMMAND_CHAR_UUID,
                 'Flags': dbus.Array(flags, signature='s')}}
 
         @dbus.service.method(PROP_IFACE, in_signature='s', out_signature='a{sv}')
