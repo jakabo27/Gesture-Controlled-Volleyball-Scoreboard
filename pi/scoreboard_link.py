@@ -344,7 +344,7 @@ def run_ble(link):
             dbus.service.Object.__init__(self, bus, self.path)
 
         def properties(self):
-            flags = ['encrypt-write'] if SECURE_WRITES else ['write']
+            flags = ['encrypt-write'] if SECURE_WRITES else ['write', 'write-without-response']
             return {GATT_CHRC_IFACE: {
                 'Service': dbus.ObjectPath(self.service.path), 'UUID': COMMAND_CHAR_UUID,
                 'Flags': dbus.Array(flags, signature='s')}}

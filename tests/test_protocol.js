@@ -37,6 +37,8 @@ check('rainbow digit sweeps the whole wheel', () => {
   assert.strictEqual(P.rainbowPixelHue(6, 8), 250);           // last LED of segment G: map(62, 0, 63, 0, 255)
   assert.deepStrictEqual(P.ledColor(P.COLOR_WHITE, 3, 4), [255, 255, 255]);
   assert.deepStrictEqual(P.ledColor(160, 0, 0), [0, 0, 255]);
+  assert.deepStrictEqual(P.ledColor(0, 0, 0), [0, 255, 0]);     // sketch red shows green on the GRB strip
+  assert.deepStrictEqual(P.ledColor(96, 0, 0), [255, 0, 0]);    // sketch green shows red
 });
 
 check('digit table has 16 glyphs of 7 segments', () => {

@@ -79,6 +79,11 @@ body.theme-day .icon-moon, body.theme-night .icon-sun { display: block; }
 .pill.bad .dot { background: var(--bad); }
 .pill.busy .dot { background: var(--accent); animation: pulse 1s infinite alternate; }
 .pill-quiet { color: var(--muted); }
+.game-clock { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 22px; letter-spacing: 0.04em;
+  position: absolute; left: 50%; transform: translateX(-50%); }
+.game-clock.idle { color: var(--muted); }
+.game-clock.done { color: var(--ok); }
+@media (max-width: 520px) { .game-clock { font-size: 18px; } }
 @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
 .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--line); color: var(--ink); padding: 0; cursor: pointer; }
@@ -87,7 +92,7 @@ body.theme-day .icon-moon, body.theme-night .icon-sun { display: block; }
 
 /* ---- event toast -------------------------------------------------------------------------------- */
 /* sits in the top bar, between the status pills and the buttons, so it never covers the digits */
-.toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 4px); transform: translate(-50%, -12px);
+.toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + var(--bar-h) + 4px); transform: translate(-50%, -12px);
   display: flex; align-items: baseline; gap: 10px; white-space: nowrap;
   background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 5px 18px;
   opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; z-index: 3; }

@@ -115,9 +115,9 @@
   // A swatch of the raw team color for backgrounds and the color bar
   function teamSwatch(colorCode) {
     if (colorCode === P.COLOR_RAINBOW) {
-      return { css: `linear-gradient(120deg, ${RAINBOW_HUES.map((h) => rgb(P.rainbowHue(h))).join(', ')})`, solid: null, lum: 0.3 };
+      return { css: `linear-gradient(120deg, ${RAINBOW_HUES.map((h) => rgb(P.ledRgb(P.rainbowHue(h)))).join(', ')})`, solid: null, lum: 0.3 };
     }
-    const c = colorCode === P.COLOR_WHITE || colorCode > P.COLOR_RAINBOW ? [240, 240, 240] : P.rainbowHue(colorCode);
+    const c = colorCode === P.COLOR_WHITE || colorCode > P.COLOR_RAINBOW ? [240, 240, 240] : P.ledRgb(P.rainbowHue(colorCode));
     return { css: rgb(c), solid: c, lum: relLum(c) };
   }
 
@@ -195,7 +195,8 @@
       const gp = $('#gesture-pill');
       gp.hidden = false;
       gp.className = 'pill ' + (state.piOn ? 'ok' : 'pill-quiet');
-      gp.querySelector('.pill-text').textContent = state.piOn ? 'Gestures on' : 'Gestures off';
+      gp.querySelector('.pill-text').textContent = state.piOn ? 'Camera scoring on' : 'Camera scoring off';
+      gp.title = state.piOn ? 'The Pi camera is watching for T-pose (+1) and hands-on-head (−1) gestures' : 'The Pi is not connected, so only the buttons change the score';
     }
     syncBoardSettings();
   }
@@ -223,7 +224,14 @@
     if (!connected || !commandChar) return;
     btn.classList.add('sending');
     try {
-      await commandChar.writeValueWithResponse(new TextEncoder().encode(text));
+      const bytes = new TextEncoder().encode(text);
+      // Write-without-response when the Pi offers it: the scoreboard's own state update is the confirmation, and
+      // it avoids Android's "GATT Error unknown" when the write acknowledgement is slow.
+      if (commandChar.properties && commandChar.properties.writeWithoutResponse && commandChar.writeValueWithoutResponse) {
+        await withTimeout(commandChar.writeValueWithoutResponse(bytes), 4000);
+      } else {
+        await withTimeout(commandChar.writeValueWithResponse(bytes), 4000);
+      }
       boardNote = '';   // the scoreboard's own state update confirms it
     } catch (e) {
       boardNote = '(not sent: ' + e.message + ')';
@@ -268,10 +276,53 @@
     else if (s.event === 'MD') toast(s.mode === 1 ? 'TENNIS' : 'VOLLEYBALL', 'scoring mode');
   }
 
+  // ---- game clock: starts at the first point after 0-0, freezes when the game is won, resets at 0-0 ------
+  const CLOCK_KEY = 'scoreboard-clock-v1';
+  const CLOCK_MAX_AGE_MS = 6 * 3600 * 1000;
+  let clock = { start: null, frozen: null, approx: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem(CLOCK_KEY) || 'null');
+    if (saved && saved.start && Date.now() - saved.start < CLOCK_MAX_AGE_MS) clock = saved;
+  } catch (e) { /* no saved clock */ }
+  function saveClock() {
+    try { localStorage.setItem(CLOCK_KEY, JSON.stringify(clock)); } catch (e) { /* private mode */ }
+  }
+  function updateClockState(s, isNew) {
+    const zero = s.home === 0 && s.away === 0;
+    if (zero) {
+      if (clock.start !== null || clock.frozen !== null) { clock = { start: null, frozen: null, approx: false }; saveClock(); }
+    } else if (clock.start === null) {
+      // first point seen; if we connected mid-game the true start is unknown, so mark it approximate
+      clock = { start: Date.now(), frozen: null, approx: !clockSawZero };
+      saveClock();
+    }
+    clockSawZero = zero || clockSawZero;
+    if (isNew && clock.start !== null) {
+      if (s.event === 'HW' || s.event === 'AW') { if (clock.frozen === null) { clock.frozen = Date.now() - clock.start; saveClock(); } }
+      else if (clock.frozen !== null) { clock.frozen = null; saveClock(); }   // winning point was undone
+    }
+    renderClock();
+  }
+  let clockSawZero = false;
+  function renderClock() {
+    const el = $('#game-clock');
+    if (!state) { el.hidden = true; return; }
+    el.hidden = false;
+    const ms = clock.start === null ? 0 : (clock.frozen !== null ? clock.frozen : Date.now() - clock.start);
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
+    const text = h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+    el.textContent = (clock.approx && clock.start !== null ? '~' : '') + text;
+    el.classList.toggle('idle', clock.start === null);
+    el.classList.toggle('done', clock.frozen !== null);
+  }
+  setInterval(renderClock, 500);
+
   function handleState(s) {
     const isNew = lastEventSeq !== null && s.eventSeq !== lastEventSeq;
     lastEventSeq = s.eventSeq;
     state = s;
+    updateClockState(s, isNew);
     lastPacketAt = Date.now();
     render();
     if (isNew) announce(s);

@@ -100,16 +100,20 @@
     return Math.floor((segment * 9 + pixel) * 255 / 63);
   }
 
+  // What the strip really shows for a FastLED color: the WS2812B strip is wired GRB but the sketch declares
+  // NEOPIXEL (RGB order), so red and green are swapped on the LEDs. The phone copies what the LEDs show.
+  function ledRgb(c) { return [c[1], c[0], c[2]]; }
+
   // Color of one LED of a digit: segment 0-6 (A-G), pixel 0-8 along the segment
   function ledColor(colorCode, segment, pixel) {
     if (colorCode === COLOR_WHITE || colorCode > COLOR_RAINBOW) return [255, 255, 255];
-    if (colorCode === COLOR_RAINBOW) return rainbowHue(rainbowPixelHue(segment, pixel));
-    return rainbowHue(colorCode);
+    if (colorCode === COLOR_RAINBOW) return ledRgb(rainbowHue(rainbowPixelHue(segment, pixel)));
+    return ledRgb(rainbowHue(colorCode));
   }
 
   const api = {
     SERVICE_UUID, STATE_CHAR_UUID, COMMAND_CHAR_UUID, COMMANDS, commandText, DEVICE_NAME, COLOR_WHITE, COLOR_RAINBOW, EVENTS, DIGIT_TABLE,
-    decodeState, rainbowHue, rainbowPixelHue, ledColor,
+    decodeState, rainbowHue, rainbowPixelHue, ledRgb, ledColor,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ScoreboardProtocol = api;
