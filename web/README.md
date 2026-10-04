@@ -1,4 +1,4 @@
-# Phone display (Web Bluetooth)
+# T-Pose Scoreboard: phone display (Web Bluetooth)
 
 A single static page that shows the live score on a phone over Bluetooth LE: no Wi-Fi, no app install. It talks to [`pi/scoreboard_link.py`](../pi/scoreboard_link.py) and draws the same digits the scoreboard is showing, in the same team colors.
 
@@ -19,6 +19,10 @@ A single static page that shows the live score on a phone over Bluetooth LE: no 
 * **Scoreboard settings** (top of Settings): sport (volleyball / tennis, with a confirmation because it resets the score) volleyball game-to (15 / 21 / 25) and **Sound** (Effects = the usual sounds, Voice = says "Point home" / "Point away", Tones = plain beeps). These are sent to the Arduino through the Pi's command characteristic. The buttons show what the scoreboard reports, so they also reflect changes made with the physical button chords.
 
 Display settings are stored per phone in `localStorage`.
+
+## iPhone / iPad
+
+Safari and Chrome on iOS (both are WebKit) have **no Web Bluetooth**, so this page can't connect there. The free [Bluefy](https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055) browser adds it: open the page in Bluefy instead and use Connect as below. The page itself uses only features iOS supports (safe-area insets, `dialog`, service worker, wake lock), and it hides the full-screen button where the browser has no fullscreen API. Not tested on a real iPhone yet.
 
 ## Connecting
 

@@ -4,14 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
-  <meta name="description" content="Live score from the gesture-controlled volleyball scoreboard, over Bluetooth LE.">
-  <title>Scoreboard</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="T-Pose Scoreboard: live score, score buttons and settings for the gesture-controlled volleyball scoreboard, over Bluetooth LE.">
+  <!-- Everything is served from this origin; no third-party requests. Inline styles are set by the page for team colors. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="T-Pose">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <title>T-Pose Scoreboard</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <noscript><p style="padding:24px;font:18px system-ui">T-Pose Scoreboard needs JavaScript.</p></noscript>
   <main id="board" class="board" aria-label="Score">
     <section class="side" id="side-left">
       <div class="team-label"></div>
@@ -66,9 +75,11 @@
 
   <div id="connect" class="overlay">
     <div class="card">
-      <h1>Scoreboard</h1>
+      <h1>T-Pose Scoreboard</h1>
       <p id="connect-msg">Live score from the scoreboard over Bluetooth. No Wi-Fi needed.</p>
       <button id="btn-connect" class="primary">Connect</button>
+      <p id="ios-help" class="hint" hidden>iPhone and iPad: Safari and Chrome can't use Bluetooth. Open this page in the free
+        <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" rel="noopener">Bluefy</a> app instead.</p>
       <p class="hint">The scoreboard shows up about 30 seconds after it's switched on.</p>
       <button id="btn-demo" class="link">Try the demo</button>
     </div>

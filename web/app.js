@@ -650,10 +650,16 @@
   render();
   setLink('Not connected', 'bad');
 
+  // iPhone/iPad browsers (all WebKit) have no Web Bluetooth; the Bluefy app adds it
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // no fullscreen API on iPhone: hide the button instead of showing one that does nothing
+  if (!document.documentElement.requestFullscreen) $('#btn-fullscreen').hidden = true;
+
   if (!navigator.bluetooth) {
     $('#btn-connect').disabled = true;
-    showOverlay('This browser can\'t use Bluetooth. Open this page in Chrome on Android.');
-  } else {
+    $('#ios-help').hidden = !isIOS;
+    showOverlay(isIOS ? 'This browser can\'t use Bluetooth.' : 'This browser can\'t use Bluetooth. Open this page in Chrome on Android.');
+  } else if (navigator.bluetooth.getAvailability) {
     navigator.bluetooth.getAvailability().then((ok) => {
       if (!ok) showOverlay('Turn on Bluetooth, then tap Connect.');
     }).catch(() => {});

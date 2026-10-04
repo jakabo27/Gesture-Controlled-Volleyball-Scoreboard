@@ -1,16 +1,38 @@
 {
-  "name": "Volleyball Scoreboard",
-  "short_name": "Scoreboard",
-  "description": "Live score from the gesture-controlled volleyball scoreboard, over Bluetooth LE.",
+  "name": "T-Pose Scoreboard",
+  "short_name": "T-Pose",
+  "description": "Live score, score buttons and settings for the gesture-controlled volleyball scoreboard, over Bluetooth LE.",
   "start_url": "./",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "any",
   "background_color": "#000000",
   "theme_color": "#000000",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "./",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "categories": [
+    "sports",
+    "utilities"
   ]
 }
