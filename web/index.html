@@ -78,8 +78,11 @@
       <h1>T-Pose Scoreboard</h1>
       <p id="connect-msg">Live score from the scoreboard over Bluetooth. No Wi-Fi needed.</p>
       <button id="btn-connect" class="primary">Connect</button>
-      <p id="ios-help" class="hint" hidden>iPhone and iPad: Safari and Chrome can't use Bluetooth. Open this page in the free
-        <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" rel="noopener">Bluefy</a> app instead.</p>
+      <div id="ios-help" hidden>
+        <p class="hint">iPhone and iPad: Safari and Chrome can't use Bluetooth. Use the free Bluefy app:</p>
+        <a id="open-bluefy" class="primary as-button" href="bluefy://open">Open in Bluefy</a>
+        <p class="hint"><a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" rel="noopener">Get Bluefy (App Store)</a></p>
+      </div>
       <p class="hint">The scoreboard shows up about 30 seconds after it's switched on.</p>
       <button id="btn-demo" class="link">Try the demo</button>
     </div>

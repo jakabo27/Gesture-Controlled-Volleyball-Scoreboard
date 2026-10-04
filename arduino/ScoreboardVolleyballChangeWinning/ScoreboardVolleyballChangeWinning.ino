@@ -1132,14 +1132,13 @@ void setSoundMode(int mode)
   WAVMode = (soundMode != 2);
   stopCelebration();
   noteEvent("SM");
+  // Feedback: effects -> a sound effect, voice -> "I am a talking scoreboard", tones -> the away-point tone
   if (SDSuccess && soundMode == 0)
-    tmrpcm.play("WavMd.wav");      // the announcement for the default sound effects
+    tmrpcm.play("hUp1.wav");
   else if (SDSuccess && soundMode == 1)
-    tmrpcm.play("PtHm.wav");       // demo of the new sound: "Point home"
+    tmrpcm.play("WavMd.wav");
   else
-  {
-    for (int i = 50; i < 350; i += 10) { beep(i, 10); delay(9); } // ~0.3 s rising sweep
-  }
+    beep(350, 100);
   Serial.print("Sound mode: "); Serial.println(soundMode);
   sendStateIfDue(true);
 }

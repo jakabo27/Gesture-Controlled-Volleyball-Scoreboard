@@ -66,6 +66,13 @@ def set_tpose_enabled(on):
         with open(TPOSE_DISABLED_FILE, 'w') as f:
             f.write('disabled from the phone' + chr(10))
 
+# A phone must prove it is running the T-Pose Scoreboard page by writing HELLO,<token> to the command
+# characteristic within AUTH_SECONDS of connecting; otherwise the Pi disconnects it, and commands from a device that
+# has not said hello are refused. This keeps casual Bluetooth apps out; the token is in the public page source, so it
+# is a courtesy lock, not a secret.
+AUTH_TOKEN = 'tpose-scoreboard-page-v1'
+AUTH_SECONDS = int(os.environ.get('SCOREBOARD_AUTH_SECONDS', '8'))
+
 FRESH_SECONDS = 3.0          # Arduino data older than this is flagged stale (it sends at least once a second)
 KEEPALIVE_SECONDS = 2.0      # notify at least this often so the phone can tell a dead link from a quiet game
 BLE_RETRY_SECONDS = 5
@@ -284,6 +291,8 @@ def run_ble(link):
     ADV_IFACE = 'org.bluez.LEAdvertisement1'
     APP_PATH = '/com/scoreboard/link'
 
+    authorized = set()      # device paths that said HELLO (cleared when they disconnect)
+
     class InvalidArgs(dbus.exceptions.DBusException):
         _dbus_error_name = 'org.freedesktop.DBus.Error.InvalidArgs'
 
@@ -391,6 +400,15 @@ def run_ble(link):
         @dbus.service.method(GATT_CHRC_IFACE, in_signature='aya{sv}')
         def WriteValue(self, value, options):
             text = bytes(value).decode('ascii', errors='replace')
+            device = str(options.get('device', ''))
+            if text.strip() == 'HELLO,' + AUTH_TOKEN:
+                if device not in authorized:
+                    authorized.add(device)
+                    log('phone authorized (%s)' % (device or 'unknown device'))
+                return
+            if AUTH_SECONDS > 0 and device not in authorized:
+                log('refused a command from a phone that has not said hello (%s)' % (device or 'unknown device'))
+                raise Failed('not authorized')
             error = link.send_command(text)
             if error:
                 log('phone command rejected: %s' % error)
@@ -499,12 +517,29 @@ def run_ble(link):
             if new:
                 GLib.timeout_add_seconds(1, lambda: ensure_registered() and False)
 
+    def check_authorized(path):
+        """AUTH_SECONDS after a phone connected: drop it if it never said hello."""
+        if path in authorized or AUTH_SECONDS <= 0:
+            return False
+        try:
+            props = dbus.Interface(bus.get_object(BLUEZ, path), PROP_IFACE)
+            if not props.Get(DEVICE_IFACE, 'Connected'):
+                return False
+            log('disconnecting %s: not the T-Pose Scoreboard page' % path)
+            dbus.Interface(bus.get_object(BLUEZ, path), DEVICE_IFACE).Disconnect()
+        except dbus.exceptions.DBusException as e:
+            log('could not check/disconnect %s: %s' % (path, e.get_dbus_name()))
+        return False
+
     def on_props_changed(interface, changed, invalidated, path=None):
         if interface == DEVICE_IFACE and 'Connected' in changed:
             if changed['Connected']:
                 log('phone connected (%s)' % path)
+                if AUTH_SECONDS > 0:
+                    GLib.timeout_add_seconds(AUTH_SECONDS, check_authorized, str(path))
             else:
                 log('phone disconnected (%s)' % path)
+                authorized.discard(str(path))
                 readvertise()
 
     bus.add_signal_receiver(on_owner_changed, signal_name='NameOwnerChanged',

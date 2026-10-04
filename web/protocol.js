@@ -7,6 +7,10 @@
   const STATE_CHAR_UUID = 'b3710002-1a78-4239-800f-cf4fa9544bbe';
   const COMMAND_CHAR_UUID = 'b3710003-1a78-4239-800f-cf4fa9544bbe';
   const DEVICE_NAME = 'Scoreboard';
+  // Sent after connecting: tells the Pi this is the T-Pose Scoreboard page, not some other Bluetooth app.
+  // The Pi disconnects phones that don't say hello within a few seconds (a courtesy lock, not a secret).
+  const AUTH_TOKEN = 'tpose-scoreboard-page-v1';
+  const helloText = () => 'HELLO,' + AUTH_TOKEN;
 
   const COLOR_WHITE = 256;
   const COLOR_RAINBOW = 257;
@@ -115,7 +119,7 @@
   }
 
   const api = {
-    SERVICE_UUID, STATE_CHAR_UUID, COMMAND_CHAR_UUID, COMMANDS, commandText, DEVICE_NAME, COLOR_WHITE, COLOR_RAINBOW, EVENTS, DIGIT_TABLE,
+    SERVICE_UUID, STATE_CHAR_UUID, COMMAND_CHAR_UUID, COMMANDS, commandText, AUTH_TOKEN, helloText, DEVICE_NAME, COLOR_WHITE, COLOR_RAINBOW, EVENTS, DIGIT_TABLE,
     decodeState, rainbowHue, rainbowPixelHue, ledRgb, ledColor,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
