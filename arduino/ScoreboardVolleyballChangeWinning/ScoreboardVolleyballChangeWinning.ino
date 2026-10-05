@@ -245,6 +245,7 @@ int volleyballScoreTo = 21; //15, 21, or 25, defaulting to 21
 #define LINK_DEBUG_TX 0   // 1 = also print every state line (needs a fast serial monitor; can slow the loop)
 unsigned long linkTxLines = 0, linkTxSkipped = 0, linkRxBytes = 0, linkRxGood = 0, linkRxBad = 0;
 elapsedMillis timeSinceLinkStats;
+unsigned long maxLoopMs = 0, lastLoopStartMs = 0;   // worst time between two passes of loop() since the last stats line
 #define COLOR_WHITE 256
 #define COLOR_RAINBOW 257
 elapsedMillis timeSinceStateSent;
@@ -255,6 +256,12 @@ elapsedMillis timeSinceStateSent;
 // counts once, when it ends, and only if it was high for PI_PULSE_MIN_MS..PI_PULSE_MAX_MS.
 #define PI_PULSE_MIN_MS 15
 #define PI_PULSE_MAX_MS 400
+// Serial handshake: the vision engine sends "$C,PI,1*XX" about once a second while it is really running (camera
+// frames flowing). The Mega only acts on the Pi's score pulses while it has heard that in the last
+// PI_HELLO_TIMEOUT_MS, so nothing the Pi's pins do while it boots, shuts down or hangs can change the score.
+#define PI_HELLO_TIMEOUT_MS 4000
+elapsedMillis timeSincePiHello;
+bool piHelloSeen = false;
 bool piPulseHigh[4] = {false, false, false, false};
 unsigned long piPulseSince[4] = {0, 0, 0, 0};
 
@@ -325,6 +332,7 @@ void releaseSpeakerPin();
 void sendStateIfDue(bool force);
 void updateGameClock();
 bool piPulseEnded(int index, int pin);
+bool piHandshakeOk();
 unsigned int gameSeconds();
 void homeUp();
 void homeDown();
@@ -408,6 +416,8 @@ void setup() {
 
 void loop() {
 
+  { unsigned long nowMs = millis(); if(lastLoopStartMs && nowMs - lastLoopStartMs > maxLoopMs) maxLoopMs = nowMs - lastLoopStartMs; lastLoopStartMs = nowMs; }
+
   analogBright.update();
   analogHome.update();
   analogAway.update();  
@@ -483,7 +493,7 @@ void loop() {
   bool piAwayCobra = piPulseEnded(3, PiPinSurrenderAway);
 
   // Home Up from Pi
-  if(piHomePulse && timePiChange > delayPiChange && raspiOn)
+  if(piHomePulse && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
   {
     homeScore = homeScore + 1; // increase score
     timePiChange = 0; // Reset timer
@@ -499,7 +509,7 @@ void loop() {
     Serial.println("Point Home");
   }
   // Away Up from Pi
-  if(piAwayPulse && timePiChange > delayPiChange && raspiOn)
+  if(piAwayPulse && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
   {
     awayScore = awayScore + 1; // increase score
     timePiChange = 0; // Reset timer
@@ -516,7 +526,7 @@ void loop() {
   }
 
   //Surrender Cobra Home from Pi (Home down)
-  if(piHomeCobra && timePiChange > delayPiChange && raspiOn)
+  if(piHomeCobra && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
   {
     stopCelebration();
     homeScore = homeScore - 1; // decrease score
@@ -531,7 +541,7 @@ void loop() {
     Serial.println("Surrender Cobra Home");
   }
   // Surrender Cobra Away from Pi (Away Down)
-  if(piAwayCobra && timePiChange > delayPiChange && raspiOn)
+  if(piAwayCobra && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
   {
     stopCelebration();
     awayScore = awayScore - 1; // decrease score
@@ -649,6 +659,12 @@ void loop() {
         //Serial.println("Away color:  " + String(currentAwayColor));
         UpdateDisplay(); 
       }
+
+  { // tell the USB monitor when the handshake starts or stops
+    static bool prevHandshake = false;
+    bool hs = piHandshakeOk();
+    if(hs != prevHandshake) { prevHandshake = hs; Serial.println(hs ? "Pi handshake OK" : "Pi handshake lost"); }
+  }
 
   serviceAudio();           // celebration song / melody, non-blocking
   serviceSerialCommands();  // phone settings from the Pi
@@ -1005,6 +1021,11 @@ unsigned int gameSeconds()
   return s > 65535UL ? 65535U : (unsigned int)s;
 }
 
+bool piHandshakeOk()
+{
+  return piHelloSeen && timeSincePiHello < PI_HELLO_TIMEOUT_MS;
+}
+
 bool piPulseEnded(int index, int pin)
 {
   bool level = digitalRead(pin);
@@ -1013,7 +1034,13 @@ bool piPulseEnded(int index, int pin)
   {
     piPulseHigh[index] = false;
     unsigned long width = millis() - piPulseSince[index];
-    return width >= PI_PULSE_MIN_MS && width <= PI_PULSE_MAX_MS;
+    bool valid = width >= PI_PULSE_MIN_MS && width <= PI_PULSE_MAX_MS;
+#if LINK_DEBUG
+    { static const char* const names[4] = {"home(45)", "away(47)", "cobraHome(42)", "cobraAway(43)"};
+      Serial.print("[PI] "); Serial.print(names[index]); Serial.print(valid ? " pulse " : " IGNORED (not a pulse) ");
+      Serial.print(width); Serial.println(" ms"); }
+#endif
+    return valid;
   }
   return false;
 }
@@ -1049,7 +1076,7 @@ void sendStateIfDue(bool force)
 
   char body[64];
   int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%u,%d",
-                   homeScore, awayScore, sportMode, volleyballScoreTo, (int)raspiOn,
+                   homeScore, awayScore, sportMode, volleyballScoreTo, (int)(raspiOn && piHandshakeOk()),
                    colorCode(map(currentHomeColor, 0, 1023, 0, 255)),
                    colorCode(map(currentAwayColor, 0, 1023, 0, 255)),
                    shownDigits[0], shownDigits[1], shownDigits[2], shownDigits[3],
@@ -1261,6 +1288,13 @@ void handleCommand(char* line)
     else { linkRxBad++; linkLog("unknown SCORE", raw); }
     return;
   }
+  if(strcmp(name, "PI") == 0 && value == 1)
+  {
+    // handshake from the vision engine (see piHandshakeOk); not logged, it arrives every second
+    piHelloSeen = true;
+    timeSincePiHello = 0;
+    return;
+  }
   if(strcmp(name, "SOUND") == 0 && value >= 0 && value <= 2)
   {
     linkRxGood++; linkLog("SOUND accepted", raw);
@@ -1299,7 +1333,9 @@ void serviceSerialCommands()
     Serial.print(" txSkipped="); Serial.print(linkTxSkipped);
     Serial.print(" rxBytes="); Serial.print(linkRxBytes);
     Serial.print(" cmdOk="); Serial.print(linkRxGood);
-    Serial.print(" cmdBad="); Serial.println(linkRxBad);
+    Serial.print(" cmdBad="); Serial.print(linkRxBad);
+    Serial.print(" maxLoopMs="); Serial.println(maxLoopMs);
+    maxLoopMs = 0;
   }
 #endif
 }

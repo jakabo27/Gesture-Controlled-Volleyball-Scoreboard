@@ -123,6 +123,21 @@ class LinkProtocolTest(unittest.TestCase):
         for code in ('HU', 'HD', 'AU', 'AD'):
             self.assertIn('strcmp(arg, "%s") == 0' % code, src)
 
+    def test_pi_handshake(self):
+        # the vision engine's hello line must be checksummed correctly, the phone must not be able to send it,
+        # and the sketch must gate every Pi score on it
+        engine = open(os.path.join(ROOT, 'pi', 'PoseEstimationJT_Optimized.py'), encoding='utf-8').read()
+        m = re.search(r"LINE = b'[$](C,PI,1)[*]([0-9A-F]{2})[\\]r[\\]n'", engine)
+        self.assertIsNotNone(m, 'hello line not found in the engine')
+        x = 0
+        for ch in m.group(1):
+            x ^= ord(ch)
+        self.assertEqual(int(m.group(2), 16), x)
+        self.assertIsNone(link.build_command('PI,1'), 'phones must not be able to send the handshake')
+        src = open(SKETCH, encoding='utf-8').read()
+        self.assertIn('strcmp(name, "PI") == 0 && value == 1', src)
+        self.assertEqual(src.count('raspiOn && piHandshakeOk())'), 4 + 1)   # four Pi score checks + the phone-facing flag
+
     def test_tpose_switch(self):
         flag = link.TPOSE_DISABLED_FILE
         if os.path.exists(flag):

@@ -388,11 +388,12 @@ class HeartbeatThread:
     `unsigned long` firmware mishandled. Toggling from the main loop instead made the period depend
     on frame time (anything from 350 ms to several seconds).
     """
-    def __init__(self, pin, period):
+    def __init__(self, pin, period, hello=None):
         self.pin = pin
         self.period = period
         self.alive_until = 0.0
         self.value = 0
+        self.hello = hello
 
     def alive(self, now, grace=CAMERA_OUTAGE_GRACE):
         self.alive_until = now + grace
@@ -412,6 +413,40 @@ class HeartbeatThread:
                     self.pin.value = self.value
                 except Exception:
                     pass
+                if self.hello is not None:
+                    # Wait out the Arduino's reaction to the toggle: it refreshes its LED strip (~8 ms with
+                    # interrupts off), which would eat the bytes of a hello sent at the same moment.
+                    time.sleep(0.3)
+                    self.hello.send()
+
+
+class ArduinoHello:
+    """
+    Serial handshake with the Arduino. While the vision engine is really running (same condition as the heartbeat:
+    camera frames are flowing), tell the Arduino so about once a second. The Arduino only acts on score pulses while it
+    has heard this recently, so the Pi's GPIO pins doing odd things during boot, shutdown or a hang can never change the
+    score. The port is shared with scoreboard_link.py (which only reads from it); if the UART is not enabled
+    (no dtoverlay=uart2) this quietly does nothing.
+    """
+    LINE = b'$C,PI,1*6B\r\n'    # "$C,PI,1*XX": checksummed like every Pi -> Arduino command
+
+    def __init__(self, port):
+        self.port = port
+        self.ser = None
+
+    def send(self):
+        try:
+            if self.ser is None:
+                import serial
+                self.ser = serial.Serial(self.port, 38400, timeout=0, write_timeout=0.2)
+            self.ser.write(self.LINE)
+        except Exception:
+            try:
+                if self.ser is not None:
+                    self.ser.close()
+            except Exception:
+                pass
+            self.ser = None
 
 
 class MainLoopWatchdog:
@@ -1195,7 +1230,8 @@ def main():
 
     left_cooldown = 0.0
     right_cooldown = 0.0
-    heartbeat = HeartbeatThread(heartbeatPin, HEARTBEAT_PERIOD).start()
+    heartbeat = HeartbeatThread(heartbeatPin, HEARTBEAT_PERIOD,
+                                ArduinoHello(os.environ.get('SCOREBOARD_UART', '/dev/ttyAMA1'))).start()
     last_periodic_save_time = time.monotonic()
     last_oled_update_time = 0.0
     oled_awake_until = time.monotonic() + OLED_BOOT_SECONDS
