@@ -149,20 +149,27 @@ The Arduino decides whether the Pi is alive by comparing heartbeat periods: `thi
 | Heartbeat | 37 (GPIO 26) | 46 | toggles every 1.0s while vision is live |
 | Spare | 33 (GPIO 13) | 44 | reserved |
 | Ground | 39 | GND | common ground is mandatory |
-| **Phone link: state in** (pink) | 28 (GPIO 1, RXD2) | 14 (TX3) | via a 5.1k/10k divider (the Mega TX is 5V). Phone display, not deployed yet |
-| **Phone link: commands out** (pink) | 27 (GPIO 0, TXD2) | 15 (RX3) | via 1k. Future phone control |
+| **Phone link: state in** (pink) | 28 (GPIO 1, RXD2) | 14 (TX3) | via a 5.1k/10k divider (the Mega TX is 5V). Phone display |
+| **Phone link: commands out** (pink) | 27 (GPIO 0, TXD2) | 15 (RX3) | via 1k. Phone commands (score +/−, settings) |
 
 The Pi's 3.3V outputs drive the Mega's 5V inputs directly: 3.3V clears the ATmega2560's 3.0V input-high threshold, and nothing ever drives 5V back into the Pi. Locally on the Pi there's also an SSD1351 RGB OLED on SPI and a power button (hold 5s to shut down). Full details are in [`pi/README.md`](pi/README.md) and [`arduino/README.md`](arduino/README.md). To set up a Pi from a blank SD card (including how everything starts on boot), see [`docs/pi-setup-from-scratch.md`](docs/pi-setup-from-scratch.md).
 
-## What's next: the score on my phone
+## The score on my phone
 
-The Pi only ever sends +1 / −1, so today it doesn't know the score. The next step:
+A phone page shows the live score in huge digits, runs the game clock, and has +1 / −1 buttons and settings, **over Bluetooth LE with no Wi-Fi** (there usually isn't any at the courts).
 
-1. The Arduino broadcasts its full state over a new one-way UART link to the Pi's second PL011 serial port. It never waits for an answer, so it still works with no Pi.
-2. The Pi publishes the score as a **Bluetooth LE** GATT service.
-3. A **Web Bluetooth** page in Chrome on my phone shows it in huge digits courtside, with no Wi-Fi needed. Phone control (+1 / −1) comes after that.
+<p align="center">
+  <img src="media/screenshots/phone-display-landscape.jpg" width="520" alt="The phone page in landscape: a Bluetooth status icon, a T-Pose Detection switch and a game clock along the top, away and home scores in large seven-segment digits in the team colors, and a large plus and a small minus button under each team">
+  <img src="media/screenshots/phone-display-portrait.jpg" width="220" alt="The same page in portrait with the two teams stacked">
+</p>
 
-The firmware, the Pi service and the page are written and bench-tested (the page runs in demo mode). Deploying needs two new wires and a boot-config change, so it waits for physical access. The plan, wiring and deploy checklist are in [`docs/phone-display-plan.md`](docs/phone-display-plan.md), and the page is in [`web/`](web/).
+* The **Arduino stays the source of truth** and only broadcasts its state over a one-way serial link (Mega TX3 → Pi UART2, through a 5.1k/10k divider), so the scoreboard works exactly as before with no Pi or phone.
+* A small **Pi service** turns that into a Bluetooth LE GATT service (BlueZ over D-Bus) and forwards a whitelist of phone commands back: score +/−, sport, game-to, and the sound mode.
+* The **page** is a dependency-free Web Bluetooth app on GitHub Pages, installable and cached for offline use. It copies the LED colors exactly (including the strip's swapped red/green), and a **T-Pose Detection** switch can turn off the Pi's gesture scoring from the phone if false positives show up in a game.
+* Connections are manual, the Pi never pairs, and a phone must say "hello" within a few seconds or it's disconnected, so other Bluetooth apps in the stands can't take over the scoreboard.
+* Android with Chrome is the reliable path. iPhones need the Bluefy app (Safari has no Web Bluetooth), and the Pi's Bluetooth stack was upgraded to BlueZ 5.79 to survive them.
+
+Wiring, protocol, deployment and the lessons learned (like why the LEDs must not refresh while a sound clip plays) are in [`docs/phone-display.md`](docs/phone-display.md); the page's own notes are in [`web/`](web/).
 
 ## Repository layout
 
@@ -171,9 +178,9 @@ The firmware, the Pi service and the page are written and bench-tested (the page
 | [`pi/`](pi/) | The vision engine as deployed: `PoseEstimationJT_Optimized.py`, the OLED helper, the TFLite model, the systemd unit and a `/boot/config.txt` snapshot |
 | [`arduino/`](arduino/) | The Mega 2560 scoreboard firmware |
 | [`legacy/`](legacy/) | The original 2022 Pi script, kept for comparison |
-| [`web/`](web/) | The phone display: a Web Bluetooth page (bold seven-segment digits, day and night themes, team colors) |
+| [`web/`](web/) | The phone display: a Web Bluetooth page (live score, game clock, +/− buttons, settings, day and night themes) |
 | [`tests/`](tests/) | Wire-contract tests that keep the Arduino line format, the Pi's BLE packet and the page's decoder in sync |
-| [`docs/`](docs/) | The engineering log (every measurement and decision, in order) and the phone-display plan |
+| [`docs/`](docs/) | The engineering log (every measurement and decision, in order) and the [phone display write-up](docs/phone-display.md) |
 | [`tools/`](tools/) | `clean_wavs.py` (de-hiss, trim and normalize the SD-card voice clips) and the source for the architecture diagram |
 | `media/` | Photos, diagrams, screenshots |
 

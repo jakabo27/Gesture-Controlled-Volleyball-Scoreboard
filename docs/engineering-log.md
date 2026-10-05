@@ -537,7 +537,7 @@ The WAV gaps were already digital silence; the audible hiss came from the voice 
 * Wire-contract tests (`tests/`) build lines from the sketch's own `snprintf` format, then check the Pi packer and the page decoder, the FastLED color port, and the digit table. They all pass and run in CI before each Pages deploy.
 * The page (`web/`) was previewed in demo mode: both themes, both color styles, both layouts, and portrait (teams stacked).
 
-**Not yet done (needs physical access):** flash the Mega, add the two wires and the divider, make the `config.txt` change, install the services, test with nRF Connect, then merge `phone-display` → `main` to publish the page on GitHub Pages. Step-by-step checklist with rollback: `docs/phone-display-plan.md` in the repo. Full from-scratch Pi setup (including how everything starts on boot): `docs/pi-setup-from-scratch.md`.
+**(Done, see section 32.) Was not yet done at the time, needed physical access:** flash the Mega, add the two wires and the divider, make the `config.txt` change, install the services, test with nRF Connect, then merge `phone-display` → `main` to publish the page on GitHub Pages. Step-by-step checklist with rollback: `docs/phone-display.md` in the repo. Full from-scratch Pi setup (including how everything starts on boot): `docs/pi-setup-from-scratch.md`.
 
 **Found while doing this:** the old wiring diagram's Pi header drawing was missing a row (19 rows instead of 20), so the OLED pin labels sat one row high. It was redrawn to scale with every pin numbered, plus the Mega's communication header (pins 14–21).
 
@@ -611,3 +611,22 @@ The amp isn't identifiable in the saved photos.
 * It runs on 7–15V only, so it can't take the Ryobi's 18–20.5V directly: it needs a small buck converter set to 12V (2–3A) from the fused battery line.
 * Expected about +5 to +7 dB over the PAM8403's ~3W.
 * Alternative without a buck: an XH-A232 (TPA3110, 8–26V, straight from the battery), which has no knob, plus a panel-mount 10k pot wired as a divider on its input.
+
+
+---
+
+## 32. Phone display: deployed, field-tested and hardened (Oct 4 2026)
+
+The software from sections 30-31 went onto the real scoreboard in one session. Full write-up: [`docs/phone-display.md`](phone-display.md). What changed from the plan:
+
+* **Wiring moved to Mega Serial3** (TX3 pin 14, RX3 pin 15). Pins 18/19 were already going to an unused level shifter. The divider is **5.1k + 10k** (3.31 V), because there was no 20k in the parts bin.
+* **Two bugs found only on the real Pi.** The GATT characteristics' `Service` property must be a D-Bus *object path*, not a string (BlueZ 5.50: "Failed to obtain service path"), and the Bluetooth radio came up soft-blocked after the overlay change (fixed with `rfkill unblock` in the start unit).
+* **Phone control added:** `SCORE`, `SOUND`, `TPOSE` commands. The score buttons share their code with the physical ones. `TPOSE` is handled on the Pi through a flag file in `/dev/shm` that the vision engine checks before sending a pulse, so detection keeps running and logging while scoring is off, and every boot starts with it on.
+* **Red/green swap:** the WS2812B strip is GRB but the sketch declares NEOPIXEL (RGB), so the LEDs show red and green swapped; the page copies what the LEDs show.
+* **Game clock moved to the scoreboard** after a phone showed 4 h 30 min following a phone switch (it had kept its own clock). The state line grew to 16 fields and the BLE packet to 19 bytes.
+* **Sound modes** (effects / "Point home/away" voice / tones) cycle with the 3-button chord or from the phone.
+* **Sound glitch fixed:** refreshing the LED strip (~8 ms with interrupts off) at the moment "Raspberry Pi connected" started made the first word stutter, because the WAV player runs from interrupts. The heartbeat-dot refresh now waits until no clip is playing.
+* **Bluetooth hardening.** Connections are manual and the Pi never pairs; it forgets stale bonds at startup (a stale bond made an iPhone show endless pairing prompts after "Forget this device"). Phones must send a hello within 8 s or are dropped, and idle ones after 75 s.
+* **BlueZ 5.50 crashed** (SEGV/ABRT) when an iPhone connected. `bluetoothd` now restarts itself, and **BlueZ 5.79 was built from source** into `/usr/local` (about 8 minutes; only `-dev` packages added, no Wi-Fi, kernel or firmware changes) and selected with a systemd drop-in that can be deleted to roll back. My first build failed to link because I had disabled the audio profiles that other BlueZ code still references.
+* **iPhone:** Safari has no Web Bluetooth; the Bluefy app works (notifications are unreliable there, so the page polls four times a second when they go quiet). Android with Chrome, installed to the home screen, is solid, including with Wi-Fi off.
+* **Debugging notes.** A debug print gated on "at least 90 bytes free" in a 64-byte buffer never fired; a stats line needed no gate. A command lost once during a test turned out not to repeat across 12 more.
