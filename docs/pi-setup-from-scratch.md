@@ -151,3 +151,7 @@ sudo systemctl disable sshswitch.service apt-daily.timer apt-daily-upgrade.timer
 * **Bluetooth:** `scoreboard_link.py` only needs BlueZ over D-Bus, so it runs on any Linux board with BlueZ. On a board whose Bluetooth doesn't use `hciuart`, replace the `ExecStart` in `scoreboard-bt.service` with `systemctl start bluetooth.service`.
 * **A faster board / newer OS:** the vision code runs on newer Python and `tflite-runtime` / `ai-edge-litert` versions. Benchmark `SCOREBOARD_THREADS` again (3 beat 4 on the Pi 4 because the camera threads need a core).
 * **Logic levels:** every Pi-side pin is 3.3V. The Mega's TX3 must keep its 5.1k/10k divider on any 3.3V board.
+
+## Newer BlueZ (recommended for iPhones)
+
+Raspbian Buster ships BlueZ 5.50, which crashes (SEGV/ABRT) when some iPhones connect. `pi/bluez-build.sh` builds BlueZ 5.79 into `/usr/local` (about 8 minutes on a Pi 4, run it detached: `sudo systemd-run --unit=bluez-build --uid=pi --nice=19 /bin/bash pi/bluez-build.sh`). It only installs `-dev` packages (nothing is upgraded or removed) and does not touch Wi-Fi, the kernel or firmware. Then switch the service over with `pi/systemd/bluetooth.service.d/20-newbluez.conf` (copy to `/etc/systemd/system/bluetooth.service.d/`, `daemon-reload`, `restart bluetooth`). Roll back by deleting that drop-in. Don't disable the audio profiles when configuring: the remaining audio code then fails to link.
