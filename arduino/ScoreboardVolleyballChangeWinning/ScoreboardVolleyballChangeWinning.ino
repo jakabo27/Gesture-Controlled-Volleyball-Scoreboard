@@ -249,6 +249,15 @@ elapsedMillis timeSinceLinkStats;
 #define COLOR_RAINBOW 257
 elapsedMillis timeSinceStateSent;
 
+// The Pi's score signals are 50 ms pulses. A line that just sits HIGH is not a pulse: while the Pi boots or shuts
+// down its GPIO 0-8 (including the two score lines) are pulled high for many seconds, and a floating wire can read
+// high too. Counting the level made the scoreboard announce "Point home" and add points over and over. A pulse now
+// counts once, when it ends, and only if it was high for PI_PULSE_MIN_MS..PI_PULSE_MAX_MS.
+#define PI_PULSE_MIN_MS 15
+#define PI_PULSE_MAX_MS 400
+bool piPulseHigh[4] = {false, false, false, false};
+unsigned long piPulseSince[4] = {0, 0, 0, 0};
+
 // Game clock (shown on the phone): starts at the first point after 0-0, freezes when the game is won (HW/AW event),
 // restarts if the winning point is undone, and resets whenever the score is 0-0. The scoreboard owns it so every
 // phone shows the same time.
@@ -315,6 +324,7 @@ void beep(unsigned int freq, unsigned long ms);
 void releaseSpeakerPin();
 void sendStateIfDue(bool force);
 void updateGameClock();
+bool piPulseEnded(int index, int pin);
 unsigned int gameSeconds();
 void homeUp();
 void homeDown();
@@ -328,7 +338,8 @@ void setup() {
 
   FastLED.addLeds<NEOPIXEL, DATA_PIN> (leds, NUM_LEDS);
   FastLED.setBrightness(10);
-  
+  FastLED.clear(true);   // black frame right away: no garbage on the strip while SD, LCD and the boot sound start up
+
   pinMode(HomeUpPin,    INPUT_PULLUP);
   pinMode(HomeDownPin,  INPUT_PULLUP);
   pinMode(AwayUpPin,    INPUT_PULLUP);
@@ -380,6 +391,15 @@ void setup() {
 
   tmrpcm.play("Boot.wav");
   delay(3500);
+
+  // First frame: read the sliders now and draw the real numbers at the real brightness, instead of waiting for the
+  // first loop to notice a slider "change" (which jumped the brightness from dim to full over a stale frame).
+  for(int i = 0; i < 8; i++) { analogBright.update(); analogHome.update(); analogAway.update(); delay(3); }
+  currentBright = analogBright.getValue();
+  FastLED.setBrightness(map(1023 - currentBright, 0, 1023, 10, 255));
+  currentHomeColor = analogHome.getValue();
+  currentAwayColor = analogAway.getValue();
+  UpdateDisplay();
   Serial.println("Starting!!");
 
 }
@@ -456,8 +476,14 @@ void loop() {
       beep(50, 65);
   }
   
+  // Pi pulses (each line is tracked every loop, even when the Pi isn't trusted, so a stuck-high line is never mistaken for a pulse)
+  bool piHomePulse = piPulseEnded(0, PiPinHome);
+  bool piAwayPulse = piPulseEnded(1, PiPinAway);
+  bool piHomeCobra = piPulseEnded(2, PiPinSurrenderHome);
+  bool piAwayCobra = piPulseEnded(3, PiPinSurrenderAway);
+
   // Home Up from Pi
-  if(digitalRead(PiPinHome) && timePiChange > delayPiChange && raspiOn)
+  if(piHomePulse && timePiChange > delayPiChange && raspiOn)
   {
     homeScore = homeScore + 1; // increase score
     timePiChange = 0; // Reset timer
@@ -473,7 +499,7 @@ void loop() {
     Serial.println("Point Home");
   }
   // Away Up from Pi
-  if(digitalRead(PiPinAway) && timePiChange > delayPiChange && raspiOn)
+  if(piAwayPulse && timePiChange > delayPiChange && raspiOn)
   {
     awayScore = awayScore + 1; // increase score
     timePiChange = 0; // Reset timer
@@ -490,7 +516,7 @@ void loop() {
   }
 
   //Surrender Cobra Home from Pi (Home down)
-  if(digitalRead(PiPinSurrenderHome) && timePiChange > delayPiChange && raspiOn)
+  if(piHomeCobra && timePiChange > delayPiChange && raspiOn)
   {
     stopCelebration();
     homeScore = homeScore - 1; // decrease score
@@ -505,7 +531,7 @@ void loop() {
     Serial.println("Surrender Cobra Home");
   }
   // Surrender Cobra Away from Pi (Away Down)
-  if(digitalRead(PiPinSurrenderAway) && timePiChange > delayPiChange && raspiOn)
+  if(piAwayCobra && timePiChange > delayPiChange && raspiOn)
   {
     stopCelebration();
     awayScore = awayScore - 1; // decrease score
@@ -977,6 +1003,19 @@ unsigned int gameSeconds()
   if(!gameRunning) return 0;
   unsigned long s = gameFrozen ? gameFrozenSecs : (millis() - gameStartMs) / 1000UL;
   return s > 65535UL ? 65535U : (unsigned int)s;
+}
+
+bool piPulseEnded(int index, int pin)
+{
+  bool level = digitalRead(pin);
+  if(level && !piPulseHigh[index]) { piPulseHigh[index] = true; piPulseSince[index] = millis(); return false; }
+  if(!level && piPulseHigh[index])
+  {
+    piPulseHigh[index] = false;
+    unsigned long width = millis() - piPulseSince[index];
+    return width >= PI_PULSE_MIN_MS && width <= PI_PULSE_MAX_MS;
+  }
+  return false;
 }
 
 void noteEvent(const char* code)

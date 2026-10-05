@@ -28,6 +28,8 @@ body.theme-day {
 }
 
 * { box-sizing: border-box; }
+/* A class that sets display (like .icon-btn's grid) would otherwise override the hidden attribute */
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
 button { font: inherit; }
