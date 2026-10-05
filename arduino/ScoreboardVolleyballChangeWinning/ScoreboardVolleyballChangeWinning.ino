@@ -242,11 +242,20 @@ int volleyballScoreTo = 21; //15, 21, or 25, defaulting to 21
 // Debug output on USB serial (115200): "[LINK] ..." lines for the state broadcast and Pi commands. Set to 0 to silence.
 // Lines are only printed when the USB TX buffer has room, so debugging can never stall the scoreboard.
 #define LINK_DEBUG 1
+#define LINK_DEBUG_TX 0   // 1 = also print every state line (needs a fast serial monitor; can slow the loop)
 unsigned long linkTxLines = 0, linkTxSkipped = 0, linkRxBytes = 0, linkRxGood = 0, linkRxBad = 0;
 elapsedMillis timeSinceLinkStats;
 #define COLOR_WHITE 256
 #define COLOR_RAINBOW 257
 elapsedMillis timeSinceStateSent;
+
+// Game clock (shown on the phone): starts at the first point after 0-0, freezes when the game is won (HW/AW event),
+// restarts if the winning point is undone, and resets whenever the score is 0-0. The scoreboard owns it so every
+// phone shows the same time.
+bool gameRunning = false;
+bool gameFrozen = false;
+unsigned long gameStartMs = 0;
+unsigned long gameFrozenSecs = 0;
 int shownDigits[4] = {-1, 0, -1, 0};
 const char* lastEvent = "BOOT"; // HU/HD/AU/AD buttons, HP/AP Pi point, HC/AC cobra, RS reset, HW/AW won, MD sport mode, GT game-to, SM sound mode
 byte eventSeq = 0;
@@ -305,6 +314,8 @@ void noteEvent(const char* code);
 void beep(unsigned int freq, unsigned long ms);
 void releaseSpeakerPin();
 void sendStateIfDue(bool force);
+void updateGameClock();
+unsigned int gameSeconds();
 void homeUp();
 void homeDown();
 void awayUp();
@@ -582,7 +593,9 @@ void loop() {
     if(digitalRead(PiPinHeartbeat)) // Indicator light for each frame processed
       leds[126] = CRGB::White;
     else leds[126] = CRGB::Black;
-    FastLED.show();
+    // A frame of 252 LEDs takes ~8 ms with interrupts off, and the WAV player needs those interrupts: refreshing
+    // right as a clip starts (e.g. "Raspberry Pi connected") made it stutter. The dot appears on the next refresh.
+    if(!tmrpcm.isPlaying()) FastLED.show();
   }
 
   // Brightness Slider
@@ -953,10 +966,32 @@ void makeBorderBlue()
 }
 
 // Record what caused the latest change, for the phone ("T-pose, home!")
+void updateGameClock()
+{
+  if(homeScore == 0 && awayScore == 0) { gameRunning = false; gameFrozen = false; }
+  else if(!gameRunning) { gameRunning = true; gameFrozen = false; gameStartMs = millis(); }
+}
+
+unsigned int gameSeconds()
+{
+  if(!gameRunning) return 0;
+  unsigned long s = gameFrozen ? gameFrozenSecs : (millis() - gameStartMs) / 1000UL;
+  return s > 65535UL ? 65535U : (unsigned int)s;
+}
+
 void noteEvent(const char* code)
 {
   lastEvent = code;
   eventSeq++;
+  updateGameClock();
+  if(strcmp(code, "HW") == 0 || strcmp(code, "AW") == 0)
+  {
+    if(gameRunning && !gameFrozen) { gameFrozen = true; gameFrozenSecs = (millis() - gameStartMs) / 1000UL; }
+  }
+  else if(gameFrozen && (strcmp(code, "HU") == 0 || strcmp(code, "HD") == 0 || strcmp(code, "AU") == 0 ||
+                         strcmp(code, "AD") == 0 || strcmp(code, "HP") == 0 || strcmp(code, "AP") == 0 ||
+                         strcmp(code, "HC") == 0 || strcmp(code, "AC") == 0))
+    gameFrozen = false;   // the winning point was undone: the game is still on
 }
 
 int colorCode(int hue)
@@ -970,15 +1005,16 @@ int colorCode(int hue)
 // force: send now (if the TX buffer has room), e.g. right before a blocking song or button-release wait.
 void sendStateIfDue(bool force)
 {
+  updateGameClock();
   if(!force && timeSinceStateSent < 100) return;
 
   char body[64];
-  int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d",
+  int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%u,%d",
                    homeScore, awayScore, sportMode, volleyballScoreTo, (int)raspiOn,
                    colorCode(map(currentHomeColor, 0, 1023, 0, 255)),
                    colorCode(map(currentAwayColor, 0, 1023, 0, 255)),
                    shownDigits[0], shownDigits[1], shownDigits[2], shownDigits[3],
-                   lastEvent, (int)eventSeq, soundMode);
+                   lastEvent, (int)eventSeq, soundMode, gameSeconds(), (int)(gameRunning && !gameFrozen));
   if(n <= 0 || n >= (int)sizeof(body)) return;
   if(!force && timeSinceStateSent < 1000 && strcmp(body, lastStateBody) == 0) return; // nothing new
 
@@ -996,7 +1032,7 @@ void sendStateIfDue(bool force)
   strcpy(lastStateBody, body);
   timeSinceStateSent = 0;
   linkTxLines++;
-#if LINK_DEBUG
+#if LINK_DEBUG && LINK_DEBUG_TX
   if(Serial.availableForWrite() > n + 24)
   {
     Serial.print("[LINK] TX $"); Serial.print(body); Serial.print("*"); Serial.println(checksum, HEX);

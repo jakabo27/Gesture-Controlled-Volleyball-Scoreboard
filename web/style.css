@@ -128,11 +128,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 /* ---- event toast -------------------------------------------------------------------------------- */
 /* sits in the top bar, between the status pills and the buttons, so it never covers the digits */
 .toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + var(--bar-h) + 4px); transform: translate(-50%, -12px);
-  display: flex; align-items: baseline; gap: 10px; white-space: nowrap;
-  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 5px 18px;
+  display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 2px 10px; text-align: center;
+  width: max-content; max-width: calc(100vw - 20px);
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 18px; padding: 5px 18px;
   opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; z-index: 3; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast-main { font-size: 22px; font-weight: 800; letter-spacing: 0.06em; }
+@media (max-width: 520px) { .toast-main { font-size: 18px; letter-spacing: 0.03em; } }
 .toast-sub { font-size: 14px; color: var(--muted); }
 .toast-sub:empty { display: none; }
 

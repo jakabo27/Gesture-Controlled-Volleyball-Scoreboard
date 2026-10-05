@@ -86,10 +86,10 @@ COLOR_RAINBOW = 257
 # Event codes from the Arduino, in wire order (index = byte in the BLE packet; 0 = unknown)
 EVENTS = ['', 'BOOT', 'HU', 'HD', 'AU', 'AD', 'HP', 'AP', 'HC', 'AC', 'RS', 'HW', 'AW', 'MD', 'GT', 'SM']
 
-# BLE state packet, 17 bytes (fits the default ATT MTU of 23 without a long read). Little endian.
+# BLE state packet, 19 bytes (fits the default ATT MTU of 23 without a long read). Little endian.
 #   B  version (1)
 #   B  flags: bit0 Pi heartbeat accepted by the Arduino (gestures live), bit1 Arduino data fresh,
-#      bit2 T-pose detection enabled, bits 3-4 sound mode
+#      bit2 T-pose detection enabled, bits 3-4 sound mode, bit5 game clock running
 #   B  home score     B  away score     (clamped to 0-255)
 #   B  sport mode (0 volleyball, 1 tennis)
 #   B  game-to score
@@ -98,12 +98,19 @@ EVENTS = ['', 'BOOT', 'HU', 'HD', 'AU', 'AD', 'HP', 'AP', 'HC', 'AC', 'RS', 'HW'
 #   B  event code (EVENTS index)
 #   B  event sequence (wraps at 256)
 #   B  age of the Arduino data in 0.1 s (capped at 255)
-PACKET_FORMAT = '<BBBBBBHH4bBBB'
+#   H  game clock in seconds (the scoreboard owns it; flags bit5 = running, else frozen or 0)
+PACKET_FORMAT = '<BBBBBBHH4bBBBH'
 PACKET_VERSION = 1
 FLAG_PI_ON = 0x01
 FLAG_FRESH = 0x02
 FLAG_TPOSE_ON = 0x04   # T-pose detection enabled (the Pi's own switch, see TPOSE_DISABLED_FILE)
+FLAG_CLOCK_RUNNING = 0x20
 FLAG_SOUND_SHIFT = 3   # bits 3-4: sound mode 0 effects, 1 'Point home/away' voice, 2 tones
+
+
+def without_age(packet):
+    """The packet minus its 'age of data' byte (index 16), which changes on every tick."""
+    return packet[:16] + packet[17:]
 
 
 def log(msg):
@@ -126,18 +133,21 @@ def parse_state_line(line):
     if checksum != expected:
         return None
     f = body.split(',')
-    if len(f) not in (14, 15) or f[0] != 'S':     # 15th field (sound mode) is absent on older firmware
+    if len(f) not in (14, 15, 17) or f[0] != 'S':     # fields 15-17 (sound mode, game clock) are absent on older firmware
         return None
     try:
         n = [int(x) for x in f[1:12]]
         seq = int(f[13])
-        sound = int(f[14]) if len(f) == 15 else 0
+        sound = int(f[14]) if len(f) >= 15 else 0
+        clock_secs = int(f[15]) if len(f) == 17 else 0
+        clock_running = bool(int(f[16])) if len(f) == 17 else False
     except ValueError:
         return None
     return {
         'home': n[0], 'away': n[1], 'mode': n[2], 'score_to': n[3], 'pi_on': bool(n[4]),
         'home_color': n[5], 'away_color': n[6], 'digits': n[7:11],
         'event': f[12], 'event_seq': seq & 0xFF, 'sound_mode': max(0, min(2, sound)),
+        'clock_secs': max(0, min(65535, clock_secs)), 'clock_running': clock_running,
     }
 
 
@@ -157,9 +167,10 @@ def pack_state(state, age_s):
     """Pack a parsed state (or None = nothing received yet) into the BLE packet."""
     if state is None:
         return struct.pack(PACKET_FORMAT, PACKET_VERSION, FLAG_TPOSE_ON if tpose_enabled() else 0, 0, 0, 0, 21,
-                           COLOR_WHITE, COLOR_WHITE, -1, 0, -1, 0, 0, 0, 255)
+                           COLOR_WHITE, COLOR_WHITE, -1, 0, -1, 0, 0, 0, 255, 0)
     flags = ((FLAG_PI_ON if state['pi_on'] else 0) | (FLAG_FRESH if age_s < FRESH_SECONDS else 0) |
-             (FLAG_TPOSE_ON if tpose_enabled() else 0) | (state.get('sound_mode', 0) << FLAG_SOUND_SHIFT))
+             (FLAG_TPOSE_ON if tpose_enabled() else 0) | (state.get('sound_mode', 0) << FLAG_SOUND_SHIFT) |
+             (FLAG_CLOCK_RUNNING if state.get('clock_running') else 0))
 
     def u8(v):
         return max(0, min(255, v))
@@ -175,7 +186,7 @@ def pack_state(state, age_s):
                        u8(state['mode']), u8(state['score_to']),
                        color(state['home_color']), color(state['away_color']),
                        *[digit(d) for d in state['digits']],
-                       event, state['event_seq'], u8(int(age_s * 10)))
+                       event, state['event_seq'], u8(int(age_s * 10)), state.get('clock_secs', 0))
 
 
 class LinkState:
@@ -600,13 +611,14 @@ def run_ble(link):
         packet, state = link.packet()
         now = time.monotonic()
         # Compare without the age byte, which changes every tick
-        if packet[:-1] != (last['packet'] or b'')[:-1] or now - last['sent_at'] >= KEEPALIVE_SECONDS:
+        if without_age(packet) != without_age(last['packet'] or b'') or now - last['sent_at'] >= KEEPALIVE_SECONDS:
             chrc.push(packet)
             last.update(packet=packet, sent_at=now)
-        if state is not None and (last['state'] is None or
-                                  {k: v for k, v in state.items()} != last['state']):
+        # the game clock ticks every second: leave it out so the journal only logs real changes
+        quiet = {k: v for k, v in state.items() if k != 'clock_secs'} if state is not None else None
+        if state is not None and (last['state'] is None or quiet != last['state']):
             log(describe(state))
-            last['state'] = dict(state)
+            last['state'] = quiet
         return True
 
     ensure_registered()
@@ -621,7 +633,7 @@ def run_console(link):
     last = None
     while True:
         packet, state = link.packet()
-        if packet[:-1] != (last or b'')[:-1]:
+        if without_age(packet) != without_age(last or b''):
             print(describe(state), '|', packet.hex(), flush=True)
             last = packet
         time.sleep(0.2)

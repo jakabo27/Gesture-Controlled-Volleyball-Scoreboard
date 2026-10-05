@@ -34,10 +34,10 @@ def sketch_format():
     return m.group(1)
 
 
-def arduino_line(home, away, mode, score_to, pi_on, home_color, away_color, digits, event, seq, sound=0):
+def arduino_line(home, away, mode, score_to, pi_on, home_color, away_color, digits, event, seq, sound=0, clock=(0, 0)):
     """Build a line exactly like sendStateIfDue() does."""
     body = sketch_format() % (home, away, mode, score_to, pi_on, home_color, away_color,
-                              digits[0], digits[1], digits[2], digits[3], event, seq, sound)
+                              digits[0], digits[1], digits[2], digits[3], event, seq, sound, clock[0], clock[1])
     cs = 0
     for ch in body:
         cs ^= ord(ch)
@@ -50,14 +50,15 @@ CASES = [
     ('mid game, hues', (14, 12, 0, 21, 1, 160, 0, [1, 4, 1, 2], 'HP', 37)),
     ('rainbow vs white, voice sound', (9, 23, 0, 25, 1, 257, 256, [-1, 9, 2, 3], 'AU', 255, 1)),
     ('tennis advantage, tones', (5, 4, 1, 21, 0, 96, 224, [10, 11, 0, 12], 'HU', 3, 2)),
-    ('home wins', (21, 19, 0, 21, 1, 32, 192, [2, 1, 1, 9], 'HW', 120)),
+    ('home wins, frozen clock', (21, 19, 0, 21, 1, 32, 192, [2, 1, 1, 9], 'HW', 120, 0, (1534, 0))),
+    ('clock running', (3, 2, 0, 21, 1, 100, 100, [-1, 3, -1, 2], 'AU', 9, 0, (65535, 1))),
 ]
 
 
 class LinkProtocolTest(unittest.TestCase):
     def test_sketch_fields_match_parser(self):
-        # 14 conversions in the sketch's format = the 14 fields after 'S' the parser expects
-        self.assertEqual(sketch_format().count('%'), 14)
+        # 16 conversions in the sketch's format = the 16 fields after 'S' the parser expects
+        self.assertEqual(sketch_format().count('%'), 16)
 
     def test_round_trip(self):
         for name, args in CASES:
@@ -73,7 +74,11 @@ class LinkProtocolTest(unittest.TestCase):
             self.assertEqual(state['sound_mode'], args[10] if len(args) > 10 else 0, name)
             self.assertEqual((link.pack_state(state, 0.4)[1] >> link.FLAG_SOUND_SHIFT) & 3, state['sound_mode'], name)
             packet = link.pack_state(state, 0.4)
-            self.assertEqual(len(packet), 17)
+            self.assertEqual(len(packet), 19)
+            clock = args[11] if len(args) > 11 else (0, 0)
+            self.assertEqual((state['clock_secs'], state['clock_running']), clock, name)
+            self.assertEqual(struct.unpack('<H', packet[17:19])[0], clock[0], name)
+            self.assertEqual(bool(packet[1] & link.FLAG_CLOCK_RUNNING), bool(clock[1]), name)
             self.assertLessEqual(len(packet), 20, 'must fit one notification at the default MTU')
 
     def test_rejects_corruption(self):
@@ -90,9 +95,9 @@ class LinkProtocolTest(unittest.TestCase):
         stale = link.pack_state(state, 10.0)
         self.assertTrue(fresh[1] & link.FLAG_FRESH)
         self.assertFalse(stale[1] & link.FLAG_FRESH)
-        self.assertEqual(stale[-1], 100)
+        self.assertEqual(stale[16], 100)   # age byte (the clock follows it)
         empty = link.pack_state(None, 999)
-        self.assertEqual(len(empty), 17)
+        self.assertEqual(len(empty), 19)
         self.assertEqual(empty[1], link.FLAG_TPOSE_ON)   # nothing received yet; T-pose detection is on by default
 
     def test_commands(self):
@@ -155,7 +160,9 @@ class LinkProtocolTest(unittest.TestCase):
                 'expect': {'piOn': bool(args[4]), 'fresh': True, 'tposeOn': True, 'home': args[0], 'away': args[1],
                            'mode': args[2], 'scoreTo': args[3], 'homeColor': args[5], 'awayColor': args[6],
                            'digits': args[7], 'event': args[8], 'eventSeq': args[9], 'ageSeconds': 1.2,
-                           'soundMode': args[10] if len(args) > 10 else 0},
+                           'soundMode': args[10] if len(args) > 10 else 0,
+                           'clockSecs': (args[11] if len(args) > 11 else (0, 0))[0],
+                           'clockRunning': bool((args[11] if len(args) > 11 else (0, 0))[1])},
             })
         os.makedirs(os.path.dirname(FIXTURES), exist_ok=True)
         with open(FIXTURES, 'w', newline='\n') as f:

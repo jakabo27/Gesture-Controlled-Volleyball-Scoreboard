@@ -45,10 +45,10 @@
     return `${name},${value}`;
   }
 
-  // Decode the 17-byte state packet (DataView or Uint8Array).
+  // Decode the 19-byte state packet (DataView or Uint8Array).
   function decodeState(data) {
     const v = data instanceof DataView ? data : new DataView(data.buffer, data.byteOffset, data.byteLength);
-    if (v.byteLength < 17) throw new Error('short packet: ' + v.byteLength + ' bytes');
+    if (v.byteLength < 17) throw new Error('short packet: ' + v.byteLength + ' bytes');   // 17 bytes = older Pi without the game clock
     const version = v.getUint8(0);
     if (version !== 1) throw new Error('unknown packet version ' + version);
     const flags = v.getUint8(1);
@@ -67,6 +67,8 @@
       event: EVENTS[v.getUint8(14)] || '',
       eventSeq: v.getUint8(15),
       ageSeconds: v.getUint8(16) / 10,
+      clockSecs: v.byteLength >= 19 ? v.getUint16(17, true) : null,   // game clock, owned by the scoreboard
+      clockRunning: !!(flags & 0x20),
     };
   }
 

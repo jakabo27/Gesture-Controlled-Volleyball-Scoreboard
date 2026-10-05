@@ -1,7 +1,7 @@
 [
  {
   "name": "boot",
-  "packet": "01060000001500010001ff00ff0001000c",
+  "packet": "01060000001500010001ff00ff0001000c0000",
   "expect": {
    "piOn": false,
    "fresh": true,
@@ -21,12 +21,14 @@
    "event": "BOOT",
    "eventSeq": 0,
    "ageSeconds": 1.2,
-   "soundMode": 0
+   "soundMode": 0,
+   "clockSecs": 0,
+   "clockRunning": false
   }
  },
  {
   "name": "mid game, hues",
-  "packet": "01070e0c0015a00000000104010206250c",
+  "packet": "01070e0c0015a00000000104010206250c0000",
   "expect": {
    "piOn": true,
    "fresh": true,
@@ -46,12 +48,14 @@
    "event": "HP",
    "eventSeq": 37,
    "ageSeconds": 1.2,
-   "soundMode": 0
+   "soundMode": 0,
+   "clockSecs": 0,
+   "clockRunning": false
   }
  },
  {
   "name": "rainbow vs white, voice sound",
-  "packet": "010f0917001901010001ff09020304ff0c",
+  "packet": "010f0917001901010001ff09020304ff0c0000",
   "expect": {
    "piOn": true,
    "fresh": true,
@@ -71,12 +75,14 @@
    "event": "AU",
    "eventSeq": 255,
    "ageSeconds": 1.2,
-   "soundMode": 1
+   "soundMode": 1,
+   "clockSecs": 0,
+   "clockRunning": false
   }
  },
  {
   "name": "tennis advantage, tones",
-  "packet": "0116050401156000e0000a0b000c02030c",
+  "packet": "0116050401156000e0000a0b000c02030c0000",
   "expect": {
    "piOn": false,
    "fresh": true,
@@ -96,12 +102,14 @@
    "event": "HU",
    "eventSeq": 3,
    "ageSeconds": 1.2,
-   "soundMode": 2
+   "soundMode": 2,
+   "clockSecs": 0,
+   "clockRunning": false
   }
  },
  {
-  "name": "home wins",
-  "packet": "0107151300152000c000020101090b780c",
+  "name": "home wins, frozen clock",
+  "packet": "0107151300152000c000020101090b780cfe05",
   "expect": {
    "piOn": true,
    "fresh": true,
@@ -121,7 +129,36 @@
    "event": "HW",
    "eventSeq": 120,
    "ageSeconds": 1.2,
-   "soundMode": 0
+   "soundMode": 0,
+   "clockSecs": 1534,
+   "clockRunning": false
+  }
+ },
+ {
+  "name": "clock running",
+  "packet": "01270302001564006400ff03ff0204090cffff",
+  "expect": {
+   "piOn": true,
+   "fresh": true,
+   "tposeOn": true,
+   "home": 3,
+   "away": 2,
+   "mode": 0,
+   "scoreTo": 21,
+   "homeColor": 100,
+   "awayColor": 100,
+   "digits": [
+    -1,
+    3,
+    -1,
+    2
+   ],
+   "event": "AU",
+   "eventSeq": 9,
+   "ageSeconds": 1.2,
+   "soundMode": 0,
+   "clockSecs": 65535,
+   "clockRunning": true
   }
  }
 ]

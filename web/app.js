@@ -191,7 +191,7 @@
       sides[i].team = team;
     });
     if (state) {
-      $('#game-info').textContent = state.mode === 1 ? 'Tennis' : `Volleyball · game to ${state.scoreTo}`;
+      $('#game-info').textContent = state.mode === 1 ? 'Tennis' : `Volleyball · Game to ${state.scoreTo}`;
       $('#score-text').textContent = `Home ${state.home}, Away ${state.away}`;
       const gp = $('#gesture-pill');
       gp.hidden = false;
@@ -336,47 +336,21 @@
     else if (s.event === 'MD') toast(s.mode === 1 ? 'TENNIS' : 'VOLLEYBALL', 'scoring mode');
   }
 
-  // ---- game clock: starts at the first point after 0-0, freezes when the game is won, resets at 0-0 ------
-  const CLOCK_KEY = 'scoreboard-clock-v1';
-  const CLOCK_MAX_AGE_MS = 6 * 3600 * 1000;
-  let clock = { start: null, frozen: null, approx: false };
-  try {
-    const saved = JSON.parse(localStorage.getItem(CLOCK_KEY) || 'null');
-    if (saved && saved.start && Date.now() - saved.start < CLOCK_MAX_AGE_MS) clock = saved;
-  } catch (e) { /* no saved clock */ }
-  function saveClock() {
-    try { localStorage.setItem(CLOCK_KEY, JSON.stringify(clock)); } catch (e) { /* private mode */ }
-  }
-  function updateClockState(s, isNew) {
-    const zero = s.home === 0 && s.away === 0;
-    if (zero) {
-      if (clock.start !== null || clock.frozen !== null) { clock = { start: null, frozen: null, approx: false }; saveClock(); }
-    } else if (clock.start === null) {
-      // first point seen; if we connected mid-game the true start is unknown, so mark it approximate
-      clock = { start: Date.now(), frozen: null, approx: !clockSawZero };
-      saveClock();
-    }
-    clockSawZero = zero || clockSawZero;
-    if (isNew && clock.start !== null) {
-      if (s.event === 'HW' || s.event === 'AW') { if (clock.frozen === null) { clock.frozen = Date.now() - clock.start; saveClock(); } }
-      else if (clock.frozen !== null) { clock.frozen = null; saveClock(); }   // winning point was undone
-    }
-    renderClock();
-  }
-  let clockSawZero = false;
+  // ---- game clock: owned by the scoreboard (starts at the first point after 0-0, freezes when the game is won,
+  // resets at 0-0), so every phone shows the same time. Between packets the page just counts the seconds itself.
+  let clockBase = null;   // { secs, running, at } from the latest packet
   function renderClock() {
     const el = $('#game-clock');
-    if (!state) { el.hidden = true; return; }
+    if (!state || state.clockSecs === null || state.clockSecs === undefined || !clockBase) { el.hidden = true; return; }
     el.hidden = false;
-    const ms = clock.start === null ? 0 : (clock.frozen !== null ? clock.frozen : Date.now() - clock.start);
-    const total = Math.max(0, Math.floor(ms / 1000));
+    const extra = clockBase.running ? (Date.now() - clockBase.at) / 1000 : 0;
+    const total = Math.max(0, Math.floor(clockBase.secs + extra));
     const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
-    const text = h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
-    el.textContent = (clock.approx && clock.start !== null ? '~' : '') + text;
-    el.classList.toggle('idle', clock.start === null);
-    el.classList.toggle('done', clock.frozen !== null);
+    el.textContent = h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+    el.classList.toggle('idle', !clockBase.running && clockBase.secs === 0);
+    el.classList.toggle('done', !clockBase.running && clockBase.secs > 0);
   }
-  setInterval(renderClock, 500);
+  setInterval(renderClock, 250);
 
   let prevTposeOn = null;
   function handleState(s) {
@@ -387,7 +361,8 @@
     const isNew = lastEventSeq !== null && s.eventSeq !== lastEventSeq;
     lastEventSeq = s.eventSeq;
     state = s;
-    updateClockState(s, isNew);
+    clockBase = { secs: s.clockSecs || 0, running: !!s.clockRunning, at: Date.now() };
+    renderClock();
     lastPacketAt = Date.now();
     render();
     if (isNew) announce(s);
@@ -429,7 +404,13 @@
     if (msg) $('#connect-msg').textContent = msg;
     $('#connect').hidden = false;
   }
-  function hideOverlay() { $('#connect').hidden = true; }
+  function hideOverlay() { $('#connect').hidden = true; setConnectBusy(false); }
+  // After choosing the scoreboard: say so, because connecting can take several seconds
+  function setConnectBusy(busy) {
+    const btn = $('#btn-connect');
+    btn.disabled = busy || !navigator.bluetooth;
+    btn.textContent = busy ? 'Connecting…' : 'Connect';
+  }
 
   // ---- Web Bluetooth ------------------------------------------------------------------------------------------
   let device = null;
@@ -464,6 +445,8 @@
       useDevice(d);
       wantConnection = true;
       attempt = 0;
+      showOverlay('Connecting to the scoreboard… this can take a few seconds.');
+      setConnectBusy(true);
       connect();
     } catch (e) {
       if (e.name !== 'NotFoundError') showOverlay('Could not open the Bluetooth chooser: ' + e.message);
@@ -508,7 +491,8 @@
       wantConnection = false;
       connected = false;
       setLink('Not connected', 'bad');
-      showOverlay('Disconnected. Tap Connect to reconnect.');
+      setConnectBusy(false);
+      showOverlay('Could not connect, or the connection dropped. Tap Connect to try again.');
       return;
     }
     attempt++;
@@ -572,7 +556,14 @@
   function demoPublish(event) {
     const s = demoState;
     s.digits = [...demoDigits(s.home), ...demoDigits(s.away)];
+    // demo clock: runs from the first point, freezes on a win, resets at 0-0 (the real one lives on the scoreboard)
     if (event) { s.event = event; s.eventSeq = (s.eventSeq + 1) & 0xff; }
+    if (s.home + s.away === 0) { s.demoStart = null; s.clockSecs = 0; s.clockRunning = false; }
+    else {
+      if (!s.demoStart) s.demoStart = Date.now();
+      if (s.event === 'HW' || s.event === 'AW') { s.clockSecs = Math.floor((Date.now() - s.demoStart) / 1000); s.clockRunning = false; }
+      else { s.clockSecs = Math.floor((Date.now() - s.demoStart) / 1000); s.clockRunning = true; }
+    }
     handleState({ ...s, digits: s.digits.slice() });
   }
   function demoStep() {
@@ -691,7 +682,7 @@
   // iPhone/iPad browsers (all WebKit) have no Web Bluetooth; the Bluefy app adds it
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   // no fullscreen API on iPhone: hide the button instead of showing one that does nothing
-  if (!document.documentElement.requestFullscreen) $('#btn-fullscreen').hidden = true;   // e.g. Safari on iPhone has none
+  if (!document.documentElement.requestFullscreen || isIOS) $('#btn-fullscreen').hidden = true;   // doesn't work from the page in Bluefy; use Bluefy's own Fullscreen button
 
   if (!navigator.bluetooth) {
     $('#btn-connect').disabled = true;

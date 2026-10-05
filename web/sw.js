@@ -1,6 +1,6 @@
 // Offline support: the courts usually have no Wi-Fi and weak signal, so the page is served from cache first
 // and refreshed in the background whenever the network is available (stale-while-revalidate).
-const CACHE = 'scoreboard-v9';
+const CACHE = 'scoreboard-v10';
 const FILES = ['./', 'index.html', 'style.css', 'protocol.js', 'app.js', 'manifest.webmanifest',
   'icon.svg', 'icon-192.png', 'icon-512.png'];
 
