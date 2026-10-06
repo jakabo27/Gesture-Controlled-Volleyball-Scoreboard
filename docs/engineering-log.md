@@ -630,3 +630,46 @@ The software from sections 30-31 went onto the real scoreboard in one session. F
 * **BlueZ 5.50 crashed** (SEGV/ABRT) when an iPhone connected. `bluetoothd` now restarts itself, and **BlueZ 5.79 was built from source** into `/usr/local` (about 8 minutes; only `-dev` packages added, no Wi-Fi, kernel or firmware changes) and selected with a systemd drop-in that can be deleted to roll back. My first build failed to link because I had disabled the audio profiles that other BlueZ code still references.
 * **iPhone:** Safari has no Web Bluetooth; the Bluefy app works (notifications are unreliable there, so the page polls four times a second when they go quiet). Android with Chrome, installed to the home screen, is solid, including with Wi-Fi off.
 * **Debugging notes.** A debug print gated on "at least 90 bytes free" in a 64-byte buffer never fired; a stats line needed no gate. A command lost once during a test turned out not to repeat across 12 more.
+
+
+---
+
+## 33. Pi -> Arduino over the serial link (Oct 5 2026, flashed and bench-tested)
+
+Plan and as-built details: [`docs/plan-serial-points.md`](plan-serial-points.md). Branch `serial-points`.
+
+* **Why:** bench tests on Oct 5 showed the GPIO wires cause most Pi-side trouble. The Pi pulls GPIO 0-8 high for ~17 s while it boots or shuts down, which scored phantom points. The pairs are crossed relative to the old notes (GPIO 5 -> 45, GPIO 6 -> 47, GPIO 19 -> 43), GPIO 21 never reaches pin 42, and a 50 ms pulse can be missed when the Mega's loop stalls 55-81 ms as a clip starts.
+* **What:**
+  * The vision engine's serial hello (`$C,PI,2`, once a second while frames flow) is now the only sign of life. It drives "Pi connected" / "disconnected" and the heartbeat pixel.
+  * Gestures are `$C,PT,<L|R><P|C>,<id>` (camera half, T-pose point or cobra), sent 3 times 150 ms apart, at least 40 ms between any two lines. The Mega remembers the last 8 ids.
+  * Camera-left = away, camera-right = home (matches the wiring the scoreboard has been scoring with).
+  * The 3 s cooldown is per team.
+  * The phone's score taps got ids and repeats too.
+  * A version-1 hello (today's engine) still uses the wires, so the firmware can be flashed first.
+* **Code:**
+  * New `pi/arduino_protocol.py` (message builders + `ArduinoLink`, testable without a Pi).
+  * The engine lost `pulse_pin()` / `HeartbeatThread` / `ArduinoHello`.
+  * The sketch lost ~80 lines of heartbeat-period timing.
+  * The buttons' code is unchanged.
+  * CI tests cover the message formats, the sketch's parser, the writer timing (fake clock) and the phone command copies.
+* **Docs:** README wiring table and "how it works", the wiring diagram (legacy wires, measured pairs), the architecture diagram (serial link, phone display no longer "planned"), and the Arduino and Pi READMEs.
+
+
+---
+
+## 34. T-pose tuning after the Oct 5 indoor session (Oct 5 2026)
+
+An indoor session produced 339 periodic frames and 7 event bursts (`PoseEvents`). Replaying them offline with the engine's own functions found:
+
+* **The cobra -1 was lost on a wire, not missed by the camera.** Both camera-right cobras (held 0.8 s) were detected and confirmed. The old engine sends that one on GPIO 21, the wire that carries no signal to the Mega. Serial points (section 33) removes the dependency.
+* **A clean T-pose scores 0.3-0.6 s after it first passes** (loop about 3.3 fps, 2 of 3 frames). The "many seconds" came from rejections:
+  * **Arms a little below level.** One player held a clear T-pose for 4+ s with the arms about 10-15 degrees below level by eye (the model measures 20-25) and never scored: arm height was 1.5-1.9 times the allowed tolerance.
+  * **An arm running off the frame edge** (wrist unreadable, `low_conf`): a T-pose at the right edge took 1.6 s to score.
+  * **Noisy wrists** on mid-distance players.
+* **Camera calibration** (checkerboard, 20 shots at 1280x720, RMS 0.39-0.40 px): horizontal field of view about **93 degrees**, vertical about 50, focal length about 835 px, optical centre (663, 327). 1080p shows exactly the same view as 720p (more pixels, 22 fps instead of 31), 480p is narrower, so the view is already as wide as this camera gives.
+* **Lens correction does not fix the droop.** Undistorting the keypoints with the fisheye model recovered 3 of 49 frames of the five verified poses (21 to 24), changed no scoring time and lost 2 of 35 previously scored poses, so it was not adopted. (My first guess, that the droop was lens distortion, was wrong: in the raw frame the arms really are low.)
+* **Relaxed tier (adopted).** Elbows and wrists may hang up to 0.8 shoulder widths below shoulder height (strict 0.35), the arm-to-spine angle may reach 130 degrees (strict 110) and elbows need 125 degrees (strict 135). The limits for arms *above* level are unchanged. A pose that passes only the relaxed limits must be held in 3 of the last 4 frames (about 1 s); strict poses still need 2 of 3. Replayed on the logged frames, 21 of 49 frames of the verified poses passed before and 38 now; the drooping T-pose scores 0.6 s in instead of never; all 35 poses that scored before still pass; and none of the 1,696 sightings in the 339 ordinary court frames newly passed. On the Oct 1 log (1.6 h of active play) the longer hold leaves about 5 short, ambiguous bursts that could have scored, so watch the new `T-window` annotation in the PoseEvents images (`r` = a relaxed-only frame).
+* **Tried and rejected:** judging a person on one visible arm when the other leaves the frame. It scored a serving player and a one-arm reach as T-poses.
+* **Not covered:** T-poses from far away (none were attempted in this data), and the calibration is thin at the far left and right edges of the image.
+
+`tests/test_tpose_rules.py` pins the rules down with synthetic skeletons (it needs numpy).

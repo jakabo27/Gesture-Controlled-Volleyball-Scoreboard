@@ -22,7 +22,7 @@ A portable, battery-powered LED scoreboard I designed and built from scratch, an
 | Domain | What I built |
 |---|---|
 | **Edge ML & computer vision** | MoveNet MultiPose (TFLite, float16) on a Pi 4 CPU at ~2.9 fps. Two overlapping half-frame passes to track up to 12 players with a 6-person model, rule-based gesture recognition in pixel space, a live-fitted lens keystone model |
-| **Embedded firmware** | Arduino Mega 2560 (C++): score and game logic, FastLED driving 252 WS2812B LEDs, 8-bit WAV playback from SD (TMRpcm), analog slide pots, I²C LCD, multi-button chords for menus, heartbeat-gated trust in the Pi |
+| **Embedded firmware** | Arduino Mega 2560 (C++): score and game logic, FastLED driving 252 WS2812B LEDs, 8-bit WAV playback from SD (TMRpcm), analog slide pots, I²C LCD, multi-button chords for menus, a checksummed serial protocol with the Pi (hello-gated, de-duplicated) |
 | **Electrical & power** | Ryobi 18V tool-battery power, fused distribution, high-current 5V buck rail for the LEDs, Pi and Arduino, panel voltage and current meters, 3.3V→5V logic interfacing, a dozen hand-wired GPIO and data runs |
 | **Mechanical & CAD** | Full enclosure designed in Fusion 360 and 3D-printed: segment carriers, battery dock, camera mount, vents and fan duct, service door, handle |
 | **Linux reliability** | systemd service with watchdogs, camera hot-plug recovery, power-cut-safe file writes, boot-time tuning, remote deploys with automatic rollback |
@@ -32,15 +32,15 @@ A portable, battery-powered LED scoreboard I designed and built from scratch, an
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/diagrams/architecture-dark.svg">
-  <img alt="How it fits together. A wide-angle USB camera streams MJPG frames to a Raspberry Pi 4. The Pi runs MoveNet MultiPose on two overlapping half-frames, applies the T-pose and cobra gesture rules, and recovers on its own from faults. It signals an Arduino Mega 2560 over 3.3V GPIO pulses (+1 or -1 per team) and a 1 second heartbeat. The Arduino owns the score and works with no Pi: it reads the manual buttons and slide pots, drives 252 WS2812B LEDs forming four seven-segment digits, and plays WAV sound effects through a speaker. A Ryobi 18V battery, fused and stepped down to 5V, powers everything. A Bluetooth LE phone display is planned." src="media/diagrams/architecture-light.svg">
+  <img alt="How it fits together. A wide-angle USB camera streams MJPG frames to a Raspberry Pi 4. The Pi runs MoveNet MultiPose on two overlapping half-frames, applies the T-pose and cobra gesture rules, and recovers on its own from faults. It talks to an Arduino Mega 2560 over a serial link: a hello every second while vision is live, and checksummed +1 / -1 messages. The Arduino owns the score and works with no Pi: it reads the manual buttons and slide pots, drives 252 WS2812B LEDs forming four seven-segment digits, and plays WAV sound effects through a speaker. A Ryobi 18V battery, fused and stepped down to 5V, powers everything. A phone page connects to the Pi over Bluetooth LE for the live score, + / - buttons and settings." src="media/diagrams/architecture-light.svg">
 </picture>
 
-The split is deliberate. **The Arduino is in charge.** It holds the score, and the five physical buttons always work. The Pi only *suggests* points, over five GPIO lines: +1 and −1 for each team, plus a heartbeat. The Arduino accepts those pulses only while the heartbeat is steady, and it announces when the Pi connects or drops out. If the camera fails, the Pi crashes, or it's simply left at home, the scoreboard is still a scoreboard.
+The split is deliberate. **The Arduino is in charge.** It holds the score, and the five physical buttons always work. The Pi only *suggests* points, over a serial link: it says hello every second while vision is live, and sends checksummed +1 / −1 messages for the camera's left (away) or right (home) half. The Arduino acts on them only while the hellos keep coming, and it announces when the Pi connects or drops out. If the camera fails, the Pi crashes, or it's simply left at home, the scoreboard is still a scoreboard.
 
 1. **Camera:** a wide-angle USB camera sits low at the net post, looking along the net so it sees both teams. Frames arrive as hardware MJPG at 1280×720, read by a threaded grabber that always hands over the newest frame.
-2. **Two passes:** each frame is split into a home half and an away half that overlap by 12% around the net line, and each half goes through MoveNet MultiPose separately.
+2. **Two passes:** each frame is split into a left half (the away team) and a right half (home) that overlap by 12% around the net line, and each half goes through MoveNet MultiPose separately.
 3. **Rules:** every detected player is checked for a T-pose or a cobra in true pixel geometry. A T-pose has to appear in 2 of the last 3 frames, and a cobra has to be held for 0.8s.
-4. **Point:** the Pi sends a 50ms pulse on that team's line. The Arduino adds the point, re-draws the digits and plays the point sound.
+4. **Point:** the Pi sends a checksummed message naming the camera half, three times with one id. The Arduino applies it once, adds the point, re-draws the digits and plays the point sound.
 
 ## The build
 
@@ -90,7 +90,7 @@ The net line calibrates itself from the median positions of upright players on e
 
 ### A wide-angle camera sitting on the ground
 
-The camera sits low and looks slightly up through a ~100° lens. That breaks naive pose geometry in three ways, all found by replaying logged points frame by frame:
+The camera sits low and looks slightly up through a ~93° lens (measured with a checkerboard calibration). That breaks naive pose geometry in three ways, all found by replaying logged points frame by frame:
 
 - **Keystone lean.** Upright people near the frame edges appear to lean outward, measured at about **−28° × (x − 0.5) + 2.4°**: roughly 10° at each edge. Real T-poses at the sideline failed the tilt check for 1.5s. A `KeystoneEstimator` re-fits that lean every 60s from upright people in view and subtracts it. It's only ever applied when it makes the check *more* lenient, so a bad fit can't block a real point.
 - **Tilt-proof arm checks.** "Arms level" is measured along the player's own hip→shoulder axis instead of image vertical, and arms must be 90° ± 20° to the spine. That makes the check immune to a camera tilted on uneven sand.
@@ -102,6 +102,8 @@ The camera sits low and looks slightly up through a ~100° lens. That breaks nai
 
 **Result:** replaying 22 logged events, the new rules accepted **151 T-pose frames vs 80** before, losing none, and most points would have confirmed 2–3s sooner. Running the old and new rules on **392 recorded game frames** plus all indoor test footage, the new rules added 22 accepted frames and dropped none, and every added frame was a genuine T-pose.
 
+**Drooping arms (Oct 5).** Real T-poses are often held with the arms a little below level. A second, relaxed tier accepts arms hanging up to 0.8 shoulder widths below the shoulders (never above level) but asks for a ~1 s hold instead of 2 of 3 frames. Replayed on the logged court frames it rescued a pose that had never scored, kept every point that scored before, and added no false positives. Details in [`docs/engineering-log.md`](docs/engineering-log.md) section 34.
+
 <!-- 📸 DETECTION FRAME: a logged PoseEvent frame (skeleton, measured values, 2-of-3 window) belongs here. Candidates are in _private/candidate-media/.
 <p align="center"><img src="media/screenshots/pose-event-trigger.jpg" width="720" alt="An annotated trigger frame: the player's skeleton drawn in green with the measured shoulder width, tilt, height offset, arm-to-spine angles and wingspan ratio, the yellow net line, and the 2-of-3 window state for each side"></p>
 -->
@@ -111,7 +113,7 @@ The camera sits low and looks slightly up through a ~100° lens. That breaks nai
 Nobody can SSH into it mid-game, so it has to recover from everything by itself:
 
 - **Camera hot-plug.** The USB camera dropped off the bus several times during boot and once mid-game (USB `error -71`, with no undervoltage). The camera is now opened by its stable `/dev/v4l/by-id` path rather than `/dev/video0`, because it came back as `video1` and the old code kept retrying the wrong device. Bit-identical frames for 5s mean a hung camera, which gets re-opened. Frames older than 2s are refused, so a frozen image can never re-score. Verified with a software USB unbind and rebind: it recovers in about 12s.
-- **Heartbeat semantics.** A dedicated thread toggles the heartbeat every 1.0s, but only while the main loop is processing live frames, so "Pi connected" on the Arduino really means "vision is working".
+- **Hello semantics.** A dedicated thread sends the serial hello every 1.0s, but only while the main loop is processing live frames, so "Pi connected" on the Arduino really means "vision is working".
 - **Watchdogs.** If the main loop stops for 60s the process exits, and systemd restarts it. The camera thread catches any exception, releases the device and re-opens it.
 - **Power cuts.** It gets switched off at the battery. Every capture is written to a `.tmp` file, `fsync`ed, then atomically renamed, and leftover temp files are cleaned at start-up. The Pi has no clock battery, so time jumps by hours once NTP syncs. All interval timing uses `time.monotonic()`, and capture files carry a session counter instead of trusting the wall clock.
 - **Bounded everything.** There's a 5GB capture cap with oldest-first rotation (scored points are kept), a stop-writing threshold at 2GB free, and bounded queues. Memory stayed flat at about 203MB over long runs.
@@ -120,6 +122,8 @@ Nobody can SSH into it mid-game, so it has to recover from everything by itself:
 ### An embedded bug worth remembering
 
 The Arduino decides whether the Pi is alive by comparing heartbeat periods: `this < prev + range && this > prev - range`. An intermediate firmware made those periods `unsigned long`. With a 1s heartbeat and a 700ms range, `prev - range` is fine, but for any period under 700ms it **wraps to about 4.29 billion**, so no period ever matched. The Pi was declared disconnected about 7s after every connect. The fix is signed 32-bit `long` periods, plus a debounce of 3 consecutive irregular beats before declaring a disconnect, and an instant first connect on boot.
+
+The heartbeat wire has since been retired altogether. While the Pi boots or shuts down it pulls GPIO 0–8 high for about 17s, and the Arduino counted the "home" line sitting high as a point every 3s. Rather than keep patching pulse timing, every Pi → Arduino signal now travels over the serial link that was added for the phone display: a hello is the heartbeat, and each gesture is a checksummed message sent three times with one id, so a copy lost while the LEDs refresh (interrupts off for ~8ms) doesn't matter and a duplicate is never counted twice.
 
 ## Measured
 
@@ -137,20 +141,22 @@ The Arduino decides whether the Pi is alive by comparing heartbeat periods: `thi
 ## Wiring
 
 <p align="center">
-  <img src="media/diagrams/wiring-pi-to-arduino.svg" width="760" alt="Wiring diagram: Raspberry Pi GPIO 5, 6, 19, 21, 26 and 13 to Arduino Mega pins 47, 45, 42, 43, 46 and 44 with a common ground, plus physical pin locator maps for both boards">
+  <img src="media/diagrams/wiring-pi-to-arduino.svg" width="760" alt="Wiring diagram: the serial link (Pi GPIO 0 and 1 to Mega pins 15 and 14, through a 1k resistor and a 5.1k/10k divider) carries every signal; the older GPIO wires (Pi GPIO 5, 6, 19, 21, 26 and 13 to Mega pins 45, 47, 43, 42, 46 and 44) are legacy; plus physical pin locator maps for both boards">
 </p>
 
 | Signal | Pi pin (BCM) | Mega pin | Notes |
 |---|---|---|---|
-| Away +1 | 29 (GPIO 5) | 47 | 50ms active-high pulse |
-| Home +1 | 31 (GPIO 6) | 45 | 50ms active-high pulse |
-| Home −1 (cobra) | 35 (GPIO 19) | 42 | |
-| Away −1 (cobra) | 40 (GPIO 21) | 43 | |
-| Heartbeat | 37 (GPIO 26) | 46 | toggles every 1.0s while vision is live |
-| Spare | 33 (GPIO 13) | 44 | reserved |
+| **Serial: Pi → Arduino** (pink) | 27 (GPIO 0, TXD2) | 15 (RX3) | via 1k. Hello every 1s, gestures (+1 / −1), phone commands |
+| **Serial: Arduino → Pi** (pink) | 28 (GPIO 1, RXD2) | 14 (TX3) | via a 5.1k/10k divider (the Mega TX is 5V). Score state for the phone |
 | Ground | 39 | GND | common ground is mandatory |
-| **Phone link: state in** (pink) | 28 (GPIO 1, RXD2) | 14 (TX3) | via a 5.1k/10k divider (the Mega TX is 5V). Phone display |
-| **Phone link: commands out** (pink) | 27 (GPIO 0, TXD2) | 15 (RX3) | via 1k. Phone commands (score +/−, settings) |
+| Home +1 (camera right), legacy | 29 (GPIO 5) | 45 | held low; only read for an older engine (hello version 1) |
+| Away +1 (camera left), legacy | 31 (GPIO 6) | 47 | same |
+| Away −1 (camera left), legacy | 35 (GPIO 19) | 43 | same |
+| Home −1 (camera right), legacy | 40 (GPIO 21) | 42 | same; no signal reaches pin 42 (measured) |
+| Heartbeat, legacy | 37 (GPIO 26) | 46 | ignored: the serial hello is the heartbeat |
+| Spare | 33 (GPIO 13) | 44 | unused |
+
+The GPIO wires stay connected but are no longer used. The pin pairs above are as measured on the bench in October 2026; the original wiring notes had each pair crossed.
 
 The Pi's 3.3V outputs drive the Mega's 5V inputs directly: 3.3V clears the ATmega2560's 3.0V input-high threshold, and nothing ever drives 5V back into the Pi. Locally on the Pi there's also an SSD1351 RGB OLED on SPI and a power button (hold 5s to shut down). Full details are in [`pi/README.md`](pi/README.md) and [`arduino/README.md`](arduino/README.md). To set up a Pi from a blank SD card (including how everything starts on boot), see [`docs/pi-setup-from-scratch.md`](docs/pi-setup-from-scratch.md).
 

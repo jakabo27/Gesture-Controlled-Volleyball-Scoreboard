@@ -195,9 +195,9 @@ function draw(theme) {
   const desc = document.createElementNS(NS, 'desc');
   desc.textContent = 'A wide-angle USB camera streams MJPG frames to a Raspberry Pi 4. The Pi runs MoveNet MultiPose on two overlapping half-frames ' +
     '(up to 12 players), checks each player for a T-pose (+1) or a hands-on-head cobra (-1), and recovers on its own from camera and software faults. ' +
-    'It signals an Arduino Mega 2560 over 3.3V GPIO pulses (+1 and -1 per team) plus a 1 second heartbeat. The Arduino owns the score and works with no Pi: ' +
+    'It talks to an Arduino Mega 2560 over a serial link: a hello every second while vision is live, and checksummed +1 / -1 messages. The Arduino owns the score and works with no Pi: ' +
     'it reads the manual buttons and slide pots, drives 252 WS2812B LEDs that form four seven-segment digits, and plays WAV sound effects from an SD card. ' +
-    'A Ryobi 18V tool battery, fused and stepped down to 5V, powers everything. A Bluetooth LE phone display is the next planned step.';
+    'A Ryobi 18V tool battery, fused and stepped down to 5V, powers everything. A phone page connects to the Pi over Bluetooth LE to show the live score and send + / - and settings.';
   svg.append(title, desc);
   rc = rough.svg(svg);
 
@@ -208,24 +208,23 @@ function draw(theme) {
   highlight(38, 44, t + 8, 14, C.rose, C.mark * 0.8);
   text('HOW IT FITS TOGETHER', 42, 56, {font:'head', size:30});
 
-  // ---- row A: camera and the planned phone display ---------------------------
+  // ---- row A: camera and the phone display ---------------------------------------
   box(45, 92, 280, 86, C.gray);
   iconCamera(62, 110);
   text('USB camera', 124, 128, {size:23});
   text('wide-angle, 1280x720', 124, 154, {size:18.5, color:C.muted});
 
-  add(rc.rectangle(595, 92, 280, 86, {seed:S(), roughness:1.1, bowing:1.2, stroke:C.muted, strokeWidth:1.8,
-                                       strokeLineDash:[9, 7], fill:C.box, fillStyle:'solid'}));
+  box(595, 92, 280, 86, C.gray);
   iconPhone(616, 113);
   text('Phone display', 660, 128, {size:23});
-  text('planned: Bluetooth LE', 660, 154, {size:18.5, color:C.muted});
+  text('Bluetooth LE, no Wi-Fi', 660, 154, {size:18.5, color:C.muted});
 
   arrow(185, 178, 185, 318);
   text('MJPG frames', 199, 240, {size:18.5, color:C.muted});
   text('over USB', 199, 262, {size:18.5, color:C.muted});
-  arrow(735, 318, 735, 180, {dash:true});
-  text('live score', 749, 240, {size:18.5, color:C.muted});
-  text('(next step)', 749, 262, {size:18.5, color:C.muted});
+  arrow(735, 318, 735, 180);
+  text('live score,', 749, 240, {size:18.5, color:C.muted});
+  text('+ / - buttons', 749, 262, {size:18.5, color:C.muted});
 
   // ---- Raspberry Pi ------------------------------------------------------------
   container(36, 318, 848, 222, C.teal);
@@ -239,10 +238,10 @@ function draw(theme) {
   text('two overlapping half-frames track up to 12 players, OLED aim assist, field logging', 460, 509,
        {size:18.5, anchor:'middle', color:C.muted});
 
-  // ---- GPIO link ---------------------------------------------------------------
+  // ---- serial link -------------------------------------------------------------
   arrow(460, 540, 460, 614);
-  text('GPIO pulses, 3.3V', 476, 574, {size:20});
-  text('+1 / -1 per team, 1s heartbeat', 476, 597, {size:17, color:C.muted});
+  text('Serial link, 38400 baud', 476, 574, {size:20});
+  text('hello every 1s, +1 / -1 messages', 476, 597, {size:17, color:C.muted});
 
   // ---- Arduino -----------------------------------------------------------------
   container(36, 614, 848, 178, C.orange);

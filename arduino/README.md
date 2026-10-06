@@ -14,11 +14,10 @@
 | A0 / A1 / A2 | Slide pots: brightness, home color, away color |
 | 20 / 21 (SDA / SCL) | 16×2 I²C LCD (address 0x27) |
 | 40, 50–52 | SD card (CS on 40, hardware SPI) |
-| 45 / 47 | From Pi: Home +1 / Away +1 |
-| 42 / 43 | From Pi: Home −1 / Away −1 (cobra) |
-| 46 | From Pi: heartbeat |
-| 44 | From Pi: spare |
-| 14 / 15 (TX3 / RX3) | State line to the Pi (phone display), 38400 baud. TX3 goes through a 5.1k/10k divider to the Pi's 3.3V RX |
+| 14 / 15 (TX3 / RX3) | Serial link to the Pi, 38400 baud. TX3 sends the score state (through a 5.1k/10k divider to the Pi's 3.3V RX); RX3 receives the Pi's hello, gestures and the phone's commands |
+| 45 / 47 | Legacy from Pi: home +1 (camera right) / away +1 (camera left). Only read for an older engine (hello version 1) |
+| 42 / 43 | Legacy from Pi: home −1 / away −1 (cobra). Same; no signal reaches 42 |
+| 46 / 44 | Legacy heartbeat (ignored) / spare |
 
 ## Controls
 
@@ -48,10 +47,12 @@ In tennis mode the digits show 0 / 15 / 30 / 40, and deuce and advantage are spe
 
 ## How it trusts the Pi
 
-* Every heartbeat edge is timed. The Pi counts as connected when the last periods agree within ±700ms and are longer than 75ms. The first edge after boot connects straight away. It takes **3 consecutive irregular periods**, or 4s of silence, to declare a disconnect.
-* Pi pulses are ignored unless the Pi is connected, and are rate-limited to one change every 3s.
-* Connect and disconnect are announced (`PiCon.wav` / `PiDis.wav`), so you know whether gestures are live.
-* The heartbeat periods are **signed** `long`. An `unsigned long` version made `prev - range` wrap to ~4.29 billion for any period under 700ms, so the Pi always "disconnected" about 7s after connecting.
+* **The serial hello is the only sign of life.** The vision engine sends `$C,PI,<version>*XX` about once a second while camera frames are flowing. The link is up from the first hello and down 4s after the last one. Both are announced (`PiCon.wav` / `PiDis.wav`), so you know whether gestures are live, and each hello blinks the heartbeat pixel (LED 126).
+* **Gestures are messages, not wire levels.** A version-2 engine sends `$C,PT,<LP|RP|LC|RC>,<id>*XX`: the camera's **L**eft or **R**ight half, a T-pose **P**oint (+1) or **C**obra (−1). The camera's left half is the away team and the right half home (`CAMERA_LEFT_IS_AWAY`). Each event comes 3 times with the same id; the last 8 ids are remembered so a copy is never counted twice, even when two events overlap.
+* **Per-team cooldown.** At most one Pi gesture per team every 3s, so a point for one team never blocks the other.
+* **With no Pi nothing changes.** If the Pi is off, booting, shutting down or hung, no hello arrives and the Mega ignores every Pi input, including whatever the GPIO wires do while the Pi boots (it pulls GPIO 0–8 high for ~17s). The buttons, sliders, display and sounds never depend on the Pi.
+* **Older engines (hello version 1)** still pulse the GPIO wires. Those pulses count only while that engine's hello is fresh, and only if they are 15–400ms wide, so a line that just sits high is never a point.
+* The heartbeat-period logic this replaced compared toggle times with **signed** `long`s: an `unsigned long` version made `prev - range` wrap to ~4.29 billion for any period under 700ms, so the Pi always "disconnected" about 7s after connecting.
 
 ## State broadcast for the phone display
 
@@ -71,7 +72,9 @@ The fields are: the scores, the mode and game-to, whether the Pi is trusted, bot
 $C,MODE,<0|1>*<XOR>        sport: 0 volleyball, 1 tennis (resets the score, like the 4-button chord)
 $C,TO,<15|21|25>*<XOR>     volleyball game-to
 $C,SOUND,<0|1|2>*<XOR>       sound mode: 0 effects, 1 "Point home/away" voice, 2 tones (same as the 3-button chord)
-$C,SCORE,<HU|HD|AU|AD>*<XOR>  phone +/- buttons: the same code as the physical buttons (taps closer than 250ms are ignored)
+$C,SCORE,<HU|HD|AU|AD>,<id>*<XOR>  phone +/- buttons: the same code as the physical buttons (taps closer than 250ms are ignored); each tap is repeated 3 times with one id and applied once
+$C,PI,<1|2>*<XOR>             hello from the vision engine, about once a second (see "How it trusts the Pi")
+$C,PT,<LP|RP|LC|RC>,<id>*<XOR>  gesture from the vision engine: camera half + T-pose point or cobra, 3 copies per id
 ```
 
 Anything else (boot noise, a half line, a wrong checksum) is ignored. The new setting shows up in the next state line, which is how the phone confirms it.

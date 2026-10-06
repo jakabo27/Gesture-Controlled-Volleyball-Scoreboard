@@ -4,12 +4,14 @@ Everything here is a copy of what runs on the scoreboard's Pi. The file layout m
 
 | File | What it is |
 |---|---|
+| `arduino_protocol.py` | The serial messages to the Arduino (hello, gestures) and `ArduinoLink`, the thread that sends them; imported by the engine |
 | `PoseEstimationJT_Optimized.py` | The whole vision engine: camera stream, two-pass MoveNet inference, T-pose / cobra rules, net-line calibration, keystone estimator, GPIO output, heartbeat, watchdogs, OLED, field capture and pose-event logging |
 | `myDisplayFunctions.py` | SSD1351 OLED helper (Adafruit Blinka + `adafruit_rgb_display`) |
 | `resources/saved_model_192x256/model_float16_quant.tflite` | MoveNet MultiPose Lightning, 192×256 input, float16 TFLite |
 | `systemd/scoreboard.service` (+ `scoreboard.service.d/10-safety.conf`) | The service unit and its drop-in |
 | `boot-config.txt` | Snapshot of `/boot/config.txt` as deployed (reference only, see below) |
-| `scoreboard_link.py` | **Phone display link (not deployed yet):** reads the Arduino's state over UART and serves it over Bluetooth LE |
+| `scoreboard_link.py` | Phone display link: reads the Arduino's state over UART, serves it over Bluetooth LE, and forwards the phone's commands |
+| `bluez-build.sh`, `systemd/bluetooth.service.d/` | Builds BlueZ 5.79 into `/usr/local`, and the drop-ins that use it and restart it if it crashes |
 | `systemd/scoreboard-link.service`, `scoreboard-bt.service` / `.timer` | Its service, and the timer that starts Bluetooth 20s after boot |
 
 ## Hardware
@@ -71,7 +73,7 @@ All at the top of `PoseEstimationJT_Optimized.py`:
 | `MAX_CENTER_DRIFT` | 0.07 | Net line clamp, ±7% of frame width |
 | `LIMB_CONF_THRESH` | 0.15 | Elbow / wrist keypoint confidence floor (shoulders use 0.20) |
 | `MIN_TPOSE_SHOULDER_PX` | 22 | Ignore people further than ~12m away (shoulder width ≈ 270px / distance in m) |
-| `HEARTBEAT_PERIOD` | 1.0s | Arduino heartbeat toggle period |
+| `HELLO_PERIOD` | 1.0s | Serial hello to the Arduino (its heartbeat) while frames flow |
 | `SAVE_INTERVAL_SECONDS` | 3.0s | Periodic background capture (~130MB/hour) |
 | `POSE_EVENT_LOGGING` | True | 20-before / 6-after annotated bursts for every scored point |
 
@@ -90,7 +92,7 @@ The whole folder is capped at 5GB (oldest periodic frames go first), and writing
 
 `boot-config.txt` is a snapshot, not something to copy blindly. The relevant lines:
 
-* `dtoverlay=disable-bt`: Bluetooth off. This frees the PL011 UART and removes an 8s `hciuart` hang from boot. The phone display replaced it with `dtoverlay=uart2` and starts Bluetooth 20s after boot (see [`docs/phone-display.md`](../docs/phone-display.md)).
+* `dtoverlay=uart2`: the serial link to the Arduino on GPIO 0/1 (`/dev/ttyAMA1`). It replaced `dtoverlay=disable-bt`, which had turned Bluetooth off to remove an 8s `hciuart` hang from boot; Bluetooth now starts 20s after boot instead (see [`docs/phone-display.md`](../docs/phone-display.md)).
 * `initial_turbo=30`, `boot_delay=0`, `disable_splash=1`: faster boot.
 * The CPU governor **must** end up `ondemand` (set by `raspi-config.service` on Buster). With it disabled, the Pi sat at 600MHz and the loop took 2.4s instead of 0.34s.
 

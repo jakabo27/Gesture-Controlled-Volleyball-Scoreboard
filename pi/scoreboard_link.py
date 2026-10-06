@@ -9,10 +9,15 @@ This service keeps the latest valid line and publishes it as a BLE GATT characte
 Web Bluetooth page in web/. It is separate from the vision engine on purpose: nothing here can affect scoring,
 and the Arduino never waits for it.
 
-The page can also change two settings (sport mode, volleyball game-to) by writing to the command characteristic.
-Only whitelisted commands are forwarded to the Arduino, as checksummed lines on the same UART:
+The page can also send commands by writing to the command characteristic. Only whitelisted ones (COMMAND_RE) are
+forwarded to the Arduino, as checksummed lines on the same UART:
 
-    $C,MODE,<0|1>*<XOR>        $C,TO,<15|21|25>*<XOR>
+    $C,SCORE,<HU|HD|AU|AD>,<id>*XX   + / - buttons; id 1..255 so the Arduino applies each tap once
+    $C,MODE,<0|1>*XX   $C,TO,<15|21|25>*XX   $C,SOUND,<0|1|2>*XX   settings (repeating one is harmless)
+
+Each command is written COMMAND_COPIES times, COMMAND_COPY_GAP apart, by one writer thread that leaves at least
+COMMAND_MIN_GAP between lines: a line that reaches the Arduino while it refreshes its LEDs (interrupts off ~8 ms)
+can lose bytes, and one surviving copy is enough. TPOSE,0|1 is handled here (see TPOSE_DISABLED_FILE).
 
 BLE uses BlueZ's D-Bus API (BlueZ 5.50 on Raspbian Buster) through python3-dbus and python3-gi, so it needs no
 pip packages. Bluetooth is started ~20 s after boot by scoreboard-bt.timer; until bluetoothd appears (and after
@@ -28,6 +33,7 @@ Environment:
 
 import argparse
 import os
+import random
 import re
 import struct
 import sys
@@ -75,6 +81,10 @@ AUTH_SECONDS = int(os.environ.get('SCOREBOARD_AUTH_SECONDS', '8'))
 # The page repeats its hello every 30 s. A connected phone that goes silent for this long (page closed, phone
 # asleep, browser crashed) is dropped, so a dead connection can never keep the scoreboard from other phones.
 HELLO_TIMEOUT_SECONDS = int(os.environ.get('SCOREBOARD_HELLO_TIMEOUT', '75'))
+
+COMMAND_COPIES = 3
+COMMAND_COPY_GAP = 0.15
+COMMAND_MIN_GAP = 0.04
 
 FRESH_SECONDS = 3.0          # Arduino data older than this is flagged stale (it sends at least once a second)
 KEEPALIVE_SECONDS = 2.0      # notify at least this often so the phone can tell a dead link from a quiet game
@@ -151,16 +161,23 @@ def parse_state_line(line):
     }
 
 
-def build_command(text):
-    """'TO,25' -> '$C,TO,25*XX\r\n' for the Arduino, or None if the command is not allowed."""
-    text = text.strip()
-    if not COMMAND_RE.match(text):
-        return None
-    body = 'C,' + text
+def frame(body):
+    """'C,TO,25' -> '$C,TO,25*XX\r\n'"""
     checksum = 0
     for ch in body:
         checksum ^= ord(ch)
     return '$%s*%02X' % (body, checksum) + chr(13) + chr(10)
+
+
+def build_command(text, command_id=None):
+    """'TO,25' -> '$C,TO,25*XX\r\n' for the Arduino, or None if the command is not allowed.
+    command_id (1..255) is appended for SCORE, so the Arduino can apply each tap once."""
+    text = text.strip()
+    if not COMMAND_RE.match(text):
+        return None
+    if command_id is not None:
+        return frame('C,%s,%d' % (text, command_id))
+    return frame('C,' + text)
 
 
 def pack_state(state, age_s):
@@ -199,6 +216,9 @@ class LinkState:
         self.lines_ok = 0
         self.lines_bad = 0
         self.serial = None   # the open UART, for commands to the Arduino
+        self._pending = []   # [due time, key, line bytes]: copies waiting for command_writer
+        self._last_write = -1e9
+        self._score_id = random.randint(1, 255)
 
     def send_command(self, text):
         """Forward a whitelisted command to the Arduino. Returns an error string, or None on success."""
@@ -214,15 +234,38 @@ class LinkState:
             log('T-pose detection %s (from the phone)' % ('ENABLED' if on else 'DISABLED'))
             return None
         with self._lock:
-            ser = self.serial
-        if ser is None:
-            return 'UART not open'
-        try:
-            ser.write(line.encode('ascii'))
-        except Exception as e:
-            return 'UART write failed: %s' % e
-        log('command to Arduino: %s' % line.strip())
+            if self.serial is None:
+                return 'UART not open'
+            name = text.strip().split(',')[0]
+            if name == 'SCORE':
+                self._score_id = self._score_id % 255 + 1
+                line = build_command(text, self._score_id)
+                key = None            # every tap is its own event
+            else:
+                key = name            # a newer setting replaces copies of the previous one still waiting
+                self._pending = [p for p in self._pending if p[1] != key]
+            now = time.monotonic()
+            for i in range(COMMAND_COPIES):
+                self._pending.append([now + i * COMMAND_COPY_GAP, key, line.encode('ascii')])
+            self._pending.sort(key=lambda p: p[0])
+        log('command to Arduino: %s (x%d)' % (line.strip(), COMMAND_COPIES))
         return None
+
+    def pump(self, now=None):
+        """Write the next due command copy, if any (called every 10 ms by command_writer). Returns the line or None."""
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            ser = self.serial
+            if ser is None or now - self._last_write < COMMAND_MIN_GAP or not self._pending \
+                    or self._pending[0][0] > now:
+                return None
+            line = self._pending.pop(0)[2]
+            self._last_write = now
+        try:
+            ser.write(line)
+        except Exception as e:
+            log('UART write failed: %s' % e)
+        return line
 
     def update(self, state):
         with self._lock:
@@ -269,6 +312,13 @@ def serial_reader(link, port):
             link.serial = None
             log('UART %s: %s (retrying in 5 s)' % (port, e))
             time.sleep(5)
+
+
+def command_writer(link):
+    """Writes the phone's commands to the Arduino, paced (see LinkState.pump)."""
+    while True:
+        link.pump()
+        time.sleep(0.01)
 
 
 def stdin_reader(link):
@@ -651,6 +701,7 @@ def main():
         reader = threading.Thread(target=stdin_reader, args=(link,), daemon=True)
     else:
         reader = threading.Thread(target=serial_reader, args=(link, args.port), daemon=True)
+        threading.Thread(target=command_writer, args=(link,), daemon=True).start()
     reader.start()
 
     log('scoreboard link starting (%s, %s)' % ('stdin' if args.stdin else args.port,

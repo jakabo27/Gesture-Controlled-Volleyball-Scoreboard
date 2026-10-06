@@ -17,6 +17,22 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'pi'))
 import scoreboard_link as link  # noqa: E402
+import arduino_protocol as proto  # noqa: E402
+
+
+class FakePort:
+    """Stands in for a serial port: records (time, bytes) when used by ArduinoLink (time from its clock)."""
+    def __init__(self):
+        self.writes = []
+        self.clock = None
+
+    def write(self, data):
+        if self.clock is not None:
+            self.writes.append((self.clock(), data))
+        return len(data)
+
+    def close(self):
+        pass
 
 # the switch file the Pi service and the vision engine share (checked as source text below), and a test-only
 # path so running the tests never touches a real Pi's switch
@@ -123,20 +139,101 @@ class LinkProtocolTest(unittest.TestCase):
         for code in ('HU', 'HD', 'AU', 'AD'):
             self.assertIn('strcmp(arg, "%s") == 0' % code, src)
 
-    def test_pi_handshake(self):
-        # the vision engine's hello line must be checksummed correctly, the phone must not be able to send it,
-        # and the sketch must gate every Pi score on it
-        engine = open(os.path.join(ROOT, 'pi', 'PoseEstimationJT_Optimized.py'), encoding='utf-8').read()
-        m = re.search(r"LINE = b'[$](C,PI,1)[*]([0-9A-F]{2})[\\]r[\\]n'", engine)
-        self.assertIsNotNone(m, 'hello line not found in the engine')
-        x = 0
-        for ch in m.group(1):
-            x ^= ord(ch)
-        self.assertEqual(int(m.group(2), 16), x)
-        self.assertIsNone(link.build_command('PI,1'), 'phones must not be able to send the handshake')
+    def test_pi_messages(self):
+        # hello and gesture lines from the vision engine: checksummed, parsed by the sketch, never sendable by a phone
+        self.assertEqual(proto.HELLO, b'$C,PI,2*68\r\n')
+        for side in 'LR':
+            for kind in 'PC':
+                for event_id in (1, 17, 255):
+                    line = proto.event_line(side, kind, event_id)
+                    body, cs = line[1:].decode().strip().split('*')
+                    self.assertEqual(body, 'C,PT,%s%s,%d' % (side, kind, event_id))
+                    self.assertEqual(int(cs, 16), proto.checksum(body))
+                    self.assertLessEqual(len(line) - 3, 31, 'must fit the sketch\'s 32-byte cmdBuf')
+        for bad in [('X', 'P', 1), ('L', 'X', 1), ('L', 'P', 0), ('L', 'P', 256)]:
+            with self.assertRaises(ValueError):
+                proto.event_line(*bad)
+        self.assertEqual(proto.next_id(255), 1)
+        self.assertEqual(proto.next_id(1), 2)
+        for cmd in ('PI,1', 'PI,2', 'PT,LP,1'):
+            self.assertIsNone(link.build_command(cmd), 'phones must not be able to send %s' % cmd)
         src = open(SKETCH, encoding='utf-8').read()
-        self.assertIn('strcmp(name, "PI") == 0 && value == 1', src)
-        self.assertEqual(src.count('raspiOn && piHandshakeOk())'), 4 + 1)   # four Pi score checks + the phone-facing flag
+        self.assertIn('strcmp(name, "PI") == 0 && (value == 1 || value == 2)', src)
+        self.assertIn('strcmp(name, "PT") == 0', src)
+        self.assertIn("bool left = arg[0] == 'L', right = arg[0] == 'R';", src)
+        self.assertIn("bool point = arg[1] == 'P', cobra = arg[1] == 'C';", src)
+        self.assertIn('#define CAMERA_LEFT_IS_AWAY 1', src)   # camera-left = away, as wired (Oct 2026)
+        self.assertIn('if(piLinkUp && piVersion == 1)', src)   # GPIO pulses only from a version-1 engine
+        self.assertIn('if(!piLinkUp || piVersion < 2)', src)   # serial gestures only from a version-2 engine
+        self.assertIn('(int)piLinkUp,', src)                   # the phone's "Pi on" flag
+        # the engine sends camera halves, through ArduinoLink, honoring the phone's T-pose switch
+        engine = open(os.path.join(ROOT, 'pi', 'PoseEstimationJT_Optimized.py'), encoding='utf-8').read()
+        self.assertIn("arduino.send_event(s[0], 'P')", engine)
+        self.assertIn("arduino.send_event(s[0], 'C')", engine)
+        self.assertIn('tpose_disabled_file=TPOSE_DISABLED_FILE', engine)
+        self.assertNotIn('pulse_pin(', engine)
+
+    def test_engine_link_timing(self):
+        # ArduinoLink with a fake clock and port: hellos once a second while alive, 3 copies per gesture,
+        # never two lines closer than MIN_GAP, nothing while the phone's T-pose switch is off
+        t = [0.0]
+        port = FakePort()
+        port.clock = lambda: t[0]
+        logs = []
+        al = proto.ArduinoLink('fake', period=1.0, grace=1.5, opener=lambda: port, clock=lambda: t[0],
+                               log=logs.append, tpose_disabled_file=link.TPOSE_DISABLED_FILE)
+        al.alive()
+        sent_at = None
+        while t[0] < 4.0:
+            if sent_at is None and t[0] >= 0.5:
+                self.assertTrue(al.send_event('L', 'P'))
+                sent_at = t[0]
+            al.step()
+            t[0] = round(t[0] + 0.01, 2)
+        hellos = [w for w in port.writes if w[1] == proto.HELLO]
+        events = [w for w in port.writes if w[1] != proto.HELLO]
+        self.assertEqual([round(w[0], 2) for w in hellos], [0.0, 1.0], 'hello every second, stopping after the grace')
+        self.assertEqual(len(events), 3)
+        self.assertEqual(len(set(w[1] for w in events)), 1, 'all copies carry the same id')
+        self.assertTrue(events[0][1].startswith(b'$C,PT,LP,'))
+        times = [w[0] for w in port.writes]
+        self.assertTrue(all(b - a >= proto.ArduinoLink.MIN_GAP - 1e-9 for a, b in zip(times, times[1:])))
+        self.assertAlmostEqual(events[2][0] - events[0][0], 2 * proto.ArduinoLink.COPY_GAP, delta=0.02)
+        # the phone's switch: detections are not sent at all
+        open(link.TPOSE_DISABLED_FILE, 'w').close()
+        try:
+            self.assertFalse(al.send_event('R', 'C'))
+            self.assertEqual(al.pending, [])
+        finally:
+            os.remove(link.TPOSE_DISABLED_FILE)
+
+    def test_phone_command_copies(self):
+        # the link service writes each phone command 3 times, paced; score taps carry an id; a newer setting
+        # replaces the copies of an older one that are still waiting
+        ls = link.LinkState()
+        port = FakePort()
+        self.assertEqual(ls.send_command('SCORE,HU'), 'UART not open')
+        ls.serial = port
+        self.assertIsNone(ls.send_command('SCORE,HU'))
+        self.assertIsNone(ls.send_command('SCORE,HU'))     # a second tap: a different id
+        self.assertIsNone(ls.send_command('MODE,1'))
+        self.assertIsNone(ls.send_command('MODE,0'))       # changed its mind: MODE,1 must not arrive after it
+        t = 0.0
+        while t < 2.0:
+            line = ls.pump(now=1e6 + t)
+            if line is not None:
+                port.writes.append((t, line))
+            t = round(t + 0.01, 2)
+        lines = [w[1] for w in port.writes if w[1] is not None]
+        scores = [l for l in lines if l.startswith(b'$C,SCORE,HU,')]
+        self.assertEqual(len(scores), 6)
+        self.assertEqual(len(set(scores)), 2, 'two taps, two ids, three copies each')
+        modes = [l for l in lines if l.startswith(b'$C,MODE,')]
+        self.assertEqual(modes, [link.build_command('MODE,0').encode()] * 3)
+        times = [w[0] for w in port.writes]
+        self.assertTrue(all(b - a >= link.COMMAND_MIN_GAP - 1e-9 for a, b in zip(times, times[1:])))
+        src = open(SKETCH, encoding='utf-8').read()
+        self.assertIn('if(id > 0 && idSeen(recentScoreIds, id)) return;', src)
 
     def test_tpose_switch(self):
         flag = link.TPOSE_DISABLED_FILE
@@ -163,7 +260,9 @@ class LinkProtocolTest(unittest.TestCase):
         with open(os.path.join(ROOT, 'pi', 'PoseEstimationJT_Optimized.py'), encoding='utf-8') as f:
             engine = f.read()
         self.assertIn(DEFAULT_SWITCH_PATH, engine)
-        self.assertIn('if os.path.exists(TPOSE_DISABLED_FILE):', engine)
+        self.assertIn('tpose_disabled_file=TPOSE_DISABLED_FILE', engine)
+        with open(os.path.join(ROOT, 'pi', 'arduino_protocol.py'), encoding='utf-8') as f:
+            self.assertIn('os.path.exists(self.tpose_disabled_file)', f.read())
 
     def test_write_fixtures_for_js(self):
         fixtures = []

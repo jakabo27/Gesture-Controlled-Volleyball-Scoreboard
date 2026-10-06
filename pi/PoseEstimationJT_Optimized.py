@@ -5,7 +5,7 @@ Camera: Arducam 1080P Low Light WDR USB Camera Module (Hardware MJPG, Wide Dynam
 
 Core Capabilities:
 1. 12-Player Dual-Half Inference with +12% Overlap:
-   - Slices frame into Home and Away halves with generous overlap.
+   - Slices frame into left (away team) and right (home team) halves with generous overlap.
    - Prevents back-row players from being omitted by MoveNet's 6-person limit.
    - Arms reaching across the net are never clipped, even for players standing 4 ft away.
 2. True Isotropic Pixel-Space Geometry:
@@ -41,6 +41,8 @@ from datetime import datetime
 os.environ.setdefault('OPENCV_LOG_LEVEL', 'ERROR')  # silence per-second V4L2 warnings while the camera is unplugged
 import cv2 as cv
 import numpy as np
+
+import arduino_protocol   # Pi -> Arduino serial messages (pi/arduino_protocol.py, next to this file)
 
 # Hardware platform detection
 IS_RPI = (os.name != 'nt') and (not sys.platform.startswith('darwin'))
@@ -92,6 +94,14 @@ else:
 NUM_THREADS = int(os.environ.get('SCOREBOARD_THREADS', '4'))  # override for benchmarking without editing code
 POSE_HOLD_FRAMES = 2              # T-Pose must be seen in this many of the last POSE_WINDOW_FRAMES frames
 POSE_WINDOW_FRAMES = 3            # (2 of 3: one frame with a flickering wrist no longer resets the hold)
+# Relaxed T-pose tier. Real T-poses are often held with the arms a little BELOW level (measured 20-25 deg by the model,
+# 10-15 deg by eye), which the strict limits reject. A pose that passes only the relaxed limits must be held longer
+# (RELAXED_HOLD_FRAMES of the last RELAXED_WINDOW_FRAMES frames, ~1 s) so a 2-frame fluke cannot score.
+RELAXED_HOLD_FRAMES = 3
+RELAXED_WINDOW_FRAMES = 4
+RELAXED_BELOW_LEVEL_K = 0.8       # elbows/wrists may hang this many shoulder widths below shoulder height (strict 0.35)
+RELAXED_ARM_SPINE_MAX_DEG = 130.0 # arm-to-spine angle limit; 90 = level, larger = hanging lower (strict 110)
+RELAXED_ELBOW_MIN_DEG = 125.0     # elbow straightness (strict 135). Above-level limits are unchanged (0.35 / 70 deg).
 LIMB_CONF_THRESH = 0.15           # elbow/wrist keypoint confidence floor (shoulders use 0.20); wrists flicker
                                   # around 0.2 even when their position is steady
 CLOSE_RANGE_SHOULDER_PX = 80.0    # close-range player: shoulders at least this wide (px) ...
@@ -105,8 +115,8 @@ MAX_CAPTURE_DIR_BYTES = 5 * 1024 * 1024 * 1024  # 5.0 GB local storage cap
 CROP_TOP_FRACTION = 0.02         # 0.0 was tested and was slightly worse on indoor close-range frames
 CROP_BOTTOM_FRACTION = 0.92      # bottom 8% is foreground floor/sand
 OVERLAP_MARGIN = 0.12             # 12% court width overlap (ensures close players' outstretched arms are visible)
-HEARTBEAT_PERIOD = 1.0           # Arduino heartbeat toggle period (s); see HeartbeatThread
-CAMERA_OUTAGE_GRACE = 20.0       # keep the heartbeat going this long without camera frames (USB re-connect takes ~11 s)
+HELLO_PERIOD = 1.0               # serial hello to the Arduino every second while frames flow (arduino_protocol)
+CAMERA_OUTAGE_GRACE = 20.0       # keep saying hello this long without camera frames (USB re-connect takes ~11 s)
 MIN_TPOSE_SHOULDER_PX = 22.0      # T-pose size floor. Measured scale: shoulder width ~= 270 px / distance (m)
                                   # (~100-120 px at 2.5 m), so 22 px ~= 12 m: the far sideline (~9-10 m, ~28 px)
                                   # counts, people more than ~2-3 m beyond the court do not.
@@ -144,7 +154,10 @@ os.makedirs(CAPTURE_PERIODIC_DIR, exist_ok=True)
 os.makedirs(CAPTURE_CONFIRMED_DIR, exist_ok=True)
 os.makedirs(POSE_EVENTS_DIR, exist_ok=True)
 
-# GPIO Pin Configuration (Pi 4 BCM mapping)
+# GPIO Pin Configuration (Pi 4 BCM mapping). The score and heartbeat wires to the Arduino are no longer used: points
+# and the heartbeat go over the serial link (arduino_protocol.ArduinoLink). The pins are still claimed and held LOW
+# so the wires stay at a defined level. Measured wiring: D6 -> Mega 47 (away +1), D5 -> 45 (home +1),
+# D19 -> 43 (away -1), D21 -> 42 (home -1, no signal arrives).
 if IS_RPI:
     homeScorePin = DigitalInOut(board.D6)
     awayScorePin = DigitalInOut(board.D5)
@@ -314,7 +327,7 @@ class CourtCameraStream:
 
     def read(self, max_age=2.0):
         # Never hand out a stale frame: if the camera has died, re-processing the last frame forever
-        # would keep the heartbeat alive and could re-score a frozen T-pose every cooldown.
+        # would keep the Arduino hello going and could re-score a frozen T-pose every cooldown.
         with self.lock:
             if self.frame is None or (time.monotonic() - self.frame_time) > max_age:
                 return None
@@ -376,77 +389,6 @@ class PowerButtonMonitor:
                 if held >= self.hold_seconds:
                     self.shutdown_requested = True
             time.sleep(0.1)
-
-
-class HeartbeatThread:
-    """
-    Toggles the Arduino heartbeat pin at a steady HEARTBEAT_PERIOD, but only while the main loop is
-    processing live frames (alive() called within the last CAMERA_OUTAGE_GRACE seconds, which rides out a
-    ~11 s USB camera re-connect without the Arduino announcing a disconnect). A steady 1.0 s period is
-    accepted by every Arduino firmware version: the original (> 300 ms, consecutive periods within
-    ±700 ms), and the fixed one; it also avoids the < 700 ms periods that the intermediate
-    `unsigned long` firmware mishandled. Toggling from the main loop instead made the period depend
-    on frame time (anything from 350 ms to several seconds).
-    """
-    def __init__(self, pin, period, hello=None):
-        self.pin = pin
-        self.period = period
-        self.alive_until = 0.0
-        self.value = 0
-        self.hello = hello
-
-    def alive(self, now, grace=CAMERA_OUTAGE_GRACE):
-        self.alive_until = now + grace
-
-    def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
-        return self
-
-    def _run(self):
-        next_toggle = time.monotonic()
-        while True:
-            next_toggle += self.period
-            time.sleep(max(0.0, next_toggle - time.monotonic()))
-            if time.monotonic() < self.alive_until:
-                self.value = 1 - self.value
-                try:
-                    self.pin.value = self.value
-                except Exception:
-                    pass
-                if self.hello is not None:
-                    # Wait out the Arduino's reaction to the toggle: it refreshes its LED strip (~8 ms with
-                    # interrupts off), which would eat the bytes of a hello sent at the same moment.
-                    time.sleep(0.3)
-                    self.hello.send()
-
-
-class ArduinoHello:
-    """
-    Serial handshake with the Arduino. While the vision engine is really running (same condition as the heartbeat:
-    camera frames are flowing), tell the Arduino so about once a second. The Arduino only acts on score pulses while it
-    has heard this recently, so the Pi's GPIO pins doing odd things during boot, shutdown or a hang can never change the
-    score. The port is shared with scoreboard_link.py (which only reads from it); if the UART is not enabled
-    (no dtoverlay=uart2) this quietly does nothing.
-    """
-    LINE = b'$C,PI,1*6B\r\n'    # "$C,PI,1*XX": checksummed like every Pi -> Arduino command
-
-    def __init__(self, port):
-        self.port = port
-        self.ser = None
-
-    def send(self):
-        try:
-            if self.ser is None:
-                import serial
-                self.ser = serial.Serial(self.port, 38400, timeout=0, write_timeout=0.2)
-            self.ser.write(self.LINE)
-        except Exception:
-            try:
-                if self.ser is not None:
-                    self.ser.close()
-            except Exception:
-                pass
-            self.ser = None
 
 
 class MainLoopWatchdog:
@@ -596,22 +538,31 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
     # The hip->shoulder axis is unreliable for some close-range frames (head cut off, hips misplaced), so
     # the better of body-axis and image-vertical measurements is used: never stricter than image-only.
     # Tolerance scales with shoulder width (close players get more pixels of leeway).
-    y_tol = max(14.0, 0.35 * shoulder_w)
+    # Relaxed tier: hanging below shoulder height gets RELAXED_BELOW_LEVEL_K shoulder widths, above it keeps 0.35.
+    tol_up = max(14.0, 0.35 * shoulder_w)
+    tol_down = max(14.0, RELAXED_BELOW_LEVEL_K * shoulder_w)
     axes = [np.array([0.0, -1.0], dtype=np.float32)]
     if has_hips and np.linalg.norm(hip_mid - sho_mid) > 15.0:
         axes.append((sho_mid - hip_mid) / np.linalg.norm(sho_mid - hip_mid))
 
-    def offsets_along(up):
+    def height_ratios(up):
         h = [float(np.dot(p[:2], up)) for p in (ls, rs, le, re, lw, rw)]
         shoulder_h = (h[0] + h[1]) / 2.0
-        return [abs(h[0] - h[1])] + [abs(v - shoulder_h) for v in h[2:]]
+        tilt = abs(h[0] - h[1]) / tol_up
+        strict = [tilt] + [abs(v - shoulder_h) / tol_up for v in h[2:]]
+        relaxed = [tilt] + [(v - shoulder_h) / tol_up if v >= shoulder_h else (shoulder_h - v) / tol_down for v in h[2:]]
+        return max(strict), max(relaxed)
 
-    y_offsets = min((offsets_along(up) for up in axes), key=max)
-    m['y_off_max_over_tol'] = round(float(max(y_offsets) / y_tol), 2)   # must be <= 1.0
-    if max(y_offsets) > y_tol:
+    ratios = [height_ratios(up) for up in axes]
+    strict_h = min(r[0] for r in ratios)      # the better of body-axis and image-vertical, as before
+    relaxed_h = min(r[1] for r in ratios)
+    m['y_off_max_over_tol'] = round(float(strict_h), 2)      # strict limit, must be <= 1.0 (same meaning as in old logs)
+    m['y_off_relaxed'] = round(float(relaxed_h), 2)          # relaxed limit, must be <= 1.0
+    if relaxed_h > 1.0:
         fails.append('height_align')
 
     # 3. Arm perpendicularity relative to spine (in true pixel coordinates)
+    strict_spine_ok = True
     if spine_len > 15.0:
         left_arm_v = np.array([lw[0] - ls[0], lw[1] - ls[1]], dtype=np.float32)
         right_arm_v = np.array([rw[0] - rs[0], rw[1] - rs[1]], dtype=np.float32)
@@ -626,9 +577,11 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
         right_ang = angle_to_spine(right_arm_v)
         m['arm_spine_deg'] = [round(left_ang), round(right_ang)]
 
-        # 90° ± 20°: the spine itself can lean ~6° from lens distortion at the frame edges
-        if not (70.0 <= left_ang <= 110.0) or not (70.0 <= right_ang <= 110.0):
+        # Strict 70-110 deg (90 +- 20: the spine itself can lean ~6 deg from lens distortion at the frame edges).
+        # Relaxed: up to RELAXED_ARM_SPINE_MAX_DEG, i.e. arms may hang lower than level but not rise higher.
+        if not (70.0 <= left_ang <= RELAXED_ARM_SPINE_MAX_DEG) or not (70.0 <= right_ang <= RELAXED_ARM_SPINE_MAX_DEG):
             fails.append('arm_spine_angle')
+        strict_spine_ok = (70.0 <= left_ang <= 110.0) and (70.0 <= right_ang <= 110.0)
 
     # 4. Strict horizontal joint ordering (RightWrist < RightElbow < RightShoulder < LeftShoulder < LeftElbow < LeftWrist)
     if not (rw[0] < re[0] < rs[0] < ls[0] < le[0] < lw[0]):
@@ -651,13 +604,25 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
     left_elbow_angle = calculate_angle_px(ls[:2], le[:2], lw[:2])
     right_elbow_angle = calculate_angle_px(rs[:2], re[:2], rw[:2])
     m['elbow_deg'] = [round(left_elbow_angle), round(right_elbow_angle)]
-    if left_elbow_angle < 135.0 or right_elbow_angle < 135.0:
+    if left_elbow_angle < RELAXED_ELBOW_MIN_DEG or right_elbow_angle < RELAXED_ELBOW_MIN_DEG:
         fails.append('elbow_straight')
+
+    # Passed, but only thanks to the relaxed limits -> main() asks for a longer hold before scoring
+    m['relaxed_only'] = bool(not fails and not (strict_h <= 1.0 and strict_spine_ok
+                                                and left_elbow_angle >= 135.0 and right_elbow_angle >= 135.0))
 
     if diag is not None:
         diag['fails'] = fails
         diag['metrics'] = m
     return not fails
+
+
+def tpose_confirmed(window):
+    """window: recent per-frame results for one side, newest last: 0 = no T-pose, 1 = relaxed-only pass, 2 = strict pass.
+    Strict: POSE_HOLD_FRAMES of the last POSE_WINDOW_FRAMES. Relaxed (or mixed): RELAXED_HOLD_FRAMES of RELAXED_WINDOW_FRAMES."""
+    w = list(window)
+    return (sum(1 for v in w[-POSE_WINDOW_FRAMES:] if v == 2) >= POSE_HOLD_FRAMES
+            or sum(1 for v in w if v) >= RELAXED_HOLD_FRAMES)
 
 
 def check_surrender_cobra(keypoints_px, conf_thresh=0.20):
@@ -1054,8 +1019,8 @@ def annotate_pose_record(rec, rel):
     oy = rec['crop_top']  # keypoints are in crop coordinates
     cv.line(img, (rec['net_x_px'], 0), (rec['net_x_px'], img.shape[0]), (0, 255, 255), 1)
     header = (f"{rec['time']}  frame {rel:+d}  loop {rec['loop_ms']}ms  "
-              f"T-window L{''.join('1' if v else '0' for v in rec['tpose_window']['LEFT'])} "
-              f"R{''.join('1' if v else '0' for v in rec['tpose_window']['RIGHT'])}")
+              f"T-window L{''.join('r' if v == 1 else ('1' if v else '0') for v in rec['tpose_window']['LEFT'])} "
+              f"R{''.join('r' if v == 1 else ('1' if v else '0') for v in rec['tpose_window']['RIGHT'])}")
     cv.putText(img, header, (8, 22), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
     cv.putText(img, header, (8, 22), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
     for p in rec['people']:
@@ -1175,25 +1140,16 @@ def run_inference_half(interpreter, input_size, half_frame):
 
 
 # Phone switch (see pi/scoreboard_link.py): while this file exists, detections are still found, logged and
-# captured (useful for reviewing false positives) but no score pulse is sent to the Arduino. /dev/shm is cleared
-# at boot, so detection starts enabled.
+# captured (useful for reviewing false positives) but nothing is sent to the Arduino (ArduinoLink.send_event).
+# /dev/shm is cleared at boot, so detection starts enabled.
 TPOSE_DISABLED_FILE = os.environ.get('SCOREBOARD_TPOSE_FLAG', '/dev/shm/scoreboard_tpose_disabled')
-
-
-def pulse_pin(pin):
-    if os.path.exists(TPOSE_DISABLED_FILE):
-        print("[GESTURES OFF] detection confirmed, score pulse suppressed (phone switch)", flush=True)
-        return
-    pin.value = 1
-    time.sleep(0.05)
-    pin.value = 0
 
 
 def main():
     print("=" * 65)
     print("Starting 12-Player Volleyball Scoreboard System (Dual-Half Pass)")
     print(f"Model: {MODEL_PATH} | Shape: {INPUT_SIZE} | Threads: {NUM_THREADS}")
-    print(f"T-Pose Hold: {POSE_HOLD_FRAMES} frames | Cobra Hold: {COBRA_HOLD_SECONDS}s")
+    print(f"T-Pose Hold: {POSE_HOLD_FRAMES}/{POSE_WINDOW_FRAMES} strict, {RELAXED_HOLD_FRAMES}/{RELAXED_WINDOW_FRAMES} relaxed | Cobra Hold: {COBRA_HOLD_SECONDS}s")
     print("=" * 65)
 
     interpreter = tflite.Interpreter(model_path=MODEL_PATH, num_threads=NUM_THREADS)
@@ -1214,8 +1170,8 @@ def main():
     keystone = KeystoneEstimator()
     capture_saver = AsyncCaptureSaver()
 
-    # T-pose confirms when seen in POSE_HOLD_FRAMES of the last POSE_WINDOW_FRAMES processed frames
-    tpose_window = {s: collections.deque(maxlen=POSE_WINDOW_FRAMES) for s in ('LEFT', 'RIGHT')}
+    # T-pose confirms per tpose_confirmed(): strict 2 of the last 3 frames, or relaxed-only 3 of the last 4
+    tpose_window = {s: collections.deque(maxlen=max(POSE_WINDOW_FRAMES, RELAXED_WINDOW_FRAMES)) for s in ('LEFT', 'RIGHT')}
     pose_logger = PoseEventLogger(capture_saver)
     frame_no = 0
     cobra_start_time = {
@@ -1230,8 +1186,10 @@ def main():
 
     left_cooldown = 0.0
     right_cooldown = 0.0
-    heartbeat = HeartbeatThread(heartbeatPin, HEARTBEAT_PERIOD,
-                                ArduinoHello(os.environ.get('SCOREBOARD_UART', '/dev/ttyAMA1'))).start()
+    # Hello + gestures to the Arduino over the serial link (pi/arduino_protocol.py)
+    arduino = arduino_protocol.ArduinoLink(os.environ.get('SCOREBOARD_UART', '/dev/ttyAMA1'),
+                                           period=HELLO_PERIOD, grace=CAMERA_OUTAGE_GRACE,
+                                           tpose_disabled_file=TPOSE_DISABLED_FILE).start()
     last_periodic_save_time = time.monotonic()
     last_oled_update_time = 0.0
     oled_awake_until = time.monotonic() + OLED_BOOT_SECONDS
@@ -1252,8 +1210,8 @@ def main():
             loop_start = time.monotonic()
             frame = vs.read()
             if frame is None:
-                # No live camera frames: skip processing (the heartbeat stops, so the Arduino reports
-                # the Pi disconnected) but keep the power button working
+                # No live camera frames: skip processing (the hello stops after CAMERA_OUTAGE_GRACE, so the
+                # Arduino reports the Pi disconnected) but keep the power button working
                 if power_button is not None and power_button.shutdown_requested:
                     shutdown_pi(vs)
                     break
@@ -1332,7 +1290,8 @@ def main():
                                             expected_lean_deg=keystone.lean_deg(torso_x / iw), frame_h=ih, diag=diag)
                     is_cobra = check_surrender_cobra(kps_px)
                     if is_tpose:
-                        current_detections[side]['tpose'] = True
+                        level = 1 if diag['metrics'].get('relaxed_only') else 2
+                        current_detections[side]['tpose'] = max(int(current_detections[side]['tpose']), level)
                     if is_cobra:
                         current_detections[side]['cobra'] = True
                     frame_people.append({
@@ -1357,7 +1316,7 @@ def main():
                 # T-Pose: seen in POSE_HOLD_FRAMES of the last POSE_WINDOW_FRAMES frames. Re-armed only
                 # after a full window without a T-pose (a real release, not a one-frame flicker).
                 tpose_window[s].append(current_detections[s]['tpose'])
-                if len(tpose_window[s]) == POSE_WINDOW_FRAMES and not any(tpose_window[s]):
+                if len(tpose_window[s]) >= POSE_WINDOW_FRAMES and not any(list(tpose_window[s])[-POSE_WINDOW_FRAMES:]):
                     armed[s]['tpose'] = True
 
                 # Surrender Cobra: time-based >= 0.80s (prevents triggers on volleyball sets)
@@ -1382,15 +1341,14 @@ def main():
                 cooldown = left_cooldown if s == 'LEFT' else right_cooldown
                 if cooldown == 0.0:
                     # Check confirmed T-Pose (+1 Point)
-                    if armed[s]['tpose'] and sum(tpose_window[s]) >= POSE_HOLD_FRAMES:
-                        print(f"\n[{datetime.now():%H:%M:%S}] >>> CONFIRMED POINT {s} "
-                              f"({POSE_HOLD_FRAMES} of last {POSE_WINDOW_FRAMES} frames) <<<\n")
+                    if armed[s]['tpose'] and tpose_confirmed(tpose_window[s]):
+                        print(f"\n[{datetime.now():%H:%M:%S}] >>> CONFIRMED POINT {s} (window {list(tpose_window[s])}: "
+                              f"strict {POSE_HOLD_FRAMES}/{POSE_WINDOW_FRAMES} or relaxed {RELAXED_HOLD_FRAMES}/{RELAXED_WINDOW_FRAMES}) <<<\n")
+                        arduino.send_event(s[0], 'P')   # camera half L / R; the Arduino maps it to a team
                         if s == 'LEFT':
-                            pulse_pin(homeScorePin)
                             left_cooldown = t + SCORE_COOLDOWN
                             last_point_time['LEFT'] = t
                         else:
-                            pulse_pin(awayScorePin)
                             right_cooldown = t + SCORE_COOLDOWN
                             last_point_time['RIGHT'] = t
                         tpose_window[s].clear()
@@ -1403,11 +1361,10 @@ def main():
                     # Check confirmed Surrender Cobra (-1 Undo)
                     elif armed[s]['cobra'] and cobra_start_time[s] > 0.0 and (t - cobra_start_time[s]) >= COBRA_HOLD_SECONDS:
                         print(f"\n[{datetime.now():%H:%M:%S}] >>> CONFIRMED SUBTRACT {s} (held >= {COBRA_HOLD_SECONDS:.1f}s) <<<\n")
+                        arduino.send_event(s[0], 'C')
                         if s == 'LEFT':
-                            pulse_pin(surrenderHomePin)
                             left_cooldown = t + SCORE_COOLDOWN
                         else:
-                            pulse_pin(surrenderAwayPin)
                             right_cooldown = t + SCORE_COOLDOWN
                         cobra_start_time[s] = 0.0
                         armed[s]['cobra'] = False
@@ -1421,8 +1378,8 @@ def main():
                 last_periodic_save_time = t
                 capture_saver.save_periodic(raw_copy)
 
-            # Heartbeat: toggled at a steady period by HeartbeatThread while frames keep being processed
-            heartbeat.alive(t)
+            # Serial hello to the Arduino (its heartbeat) keeps going while frames keep being processed
+            arduino.alive(t)
 
             # Power button (polled on its own thread): short press wakes the OLED,
             # holding POWER_HOLD_SECONDS shuts down

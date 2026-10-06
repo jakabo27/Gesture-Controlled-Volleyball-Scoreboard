@@ -81,6 +81,7 @@ Copy the repo's `pi/` folder contents to `/home/pi/Documents/` (the code expects
 
 ```
 /home/pi/Documents/PoseEstimationJT_Optimized.py
+/home/pi/Documents/arduino_protocol.py
 /home/pi/Documents/myDisplayFunctions.py
 /home/pi/Documents/scoreboard_link.py
 /home/pi/Documents/resources/saved_model_192x256/model_float16_quant.tflite
@@ -139,7 +140,7 @@ sudo systemctl disable sshswitch.service apt-daily.timer apt-daily-upgrade.timer
 ## 11. Verify end to end
 
 1. `journalctl -u scoreboard -f`: `[STATUS]` lines at ~2.9 fps. The OLED shows the camera view with the net line for 5 minutes.
-2. The Arduino says "Pi connected" (heartbeat on pin 46) within a few seconds of the first frame.
+2. The Arduino says "Pi connected" (the first serial hello) within a few seconds of the first frame.
 3. A T-pose scores. A held cobra subtracts.
 4. `journalctl -u scoreboard-link -f`: `UART open`, then about 20s after boot `GATT service registered` and `advertising as "Scoreboard"`.
 5. The phone page connects and shows the score.

@@ -75,4 +75,4 @@ arm_freq=1750
 boot_delay=0
 disable_splash=1
 initial_turbo=30
-dtoverlay=disable-bt
+dtoverlay=uart2

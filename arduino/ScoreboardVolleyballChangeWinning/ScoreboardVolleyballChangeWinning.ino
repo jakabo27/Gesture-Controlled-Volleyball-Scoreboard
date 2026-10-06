@@ -159,13 +159,15 @@ ResponsiveAnalogRead analogAway(AwaySliderPin, true, 0.001);
 #define BEEP_PITCH 1      // multiplier for the beep pitches (voice mode off / no SD card). 1 = the original low
                           // tones (preferred); higher values are louder on a small speaker.   // 1 = also output inverted audio on pin 2 (for a differential amp input), see setup()
 
-// Pins from the Pi
-#define PiSparePin 44 // Pi "Spare"
-#define PiPinHome 45 // Pi "Left" 
-#define PiPinAway 47 // Pi "Home" 
-#define PiPinHeartbeat 46 // Pi heartbeat of inference running
-#define PiPinSurrenderHome 42 // Orange Skinny
-#define PiPinSurrenderAway 43 // Yellow Skinny
+// GPIO wires from the Pi. The Pi now sends everything over the serial link (see "Pi link" below); these wires stay
+// connected but are only read for an older vision engine (hello version 1). Measured Oct 2026: Pi GPIO 5 -> 45,
+// GPIO 6 -> 47, GPIO 19 -> 43, GPIO 21 -> 42 (no signal reaches 42). The camera's right half is home, left is away.
+#define PiSparePin 44         // unused
+#define PiPinHome 45          // camera-right T-pose: home +1
+#define PiPinAway 47          // camera-left T-pose: away +1
+#define PiPinHeartbeat 46     // ignored: the serial hello is the heartbeat
+#define PiPinSurrenderHome 42 // camera-right cobra: home -1 (Orange Skinny)
+#define PiPinSurrenderAway 43 // camera-left cobra: away -1 (Yellow Skinny)
 
 // LED stuff
 #define DATA_PIN 3
@@ -203,20 +205,11 @@ int currentHomeColor = 10;
 int currentAwayColor = 10;
 int delayManualChange = 500; // Time to wait before can increment manually again
 elapsedMillis timeManualScoreChange;
-elapsedMillis timePiChange;
-int delayPiChange = 3000;
-elapsedMillis timeSparePinOn;
-bool raspiOn = 0;
-bool firstTimePiOn = 1;
-bool firstTimePiOff = 0;
-elapsedMillis timeHeartbeat = 4000;
-elapsedMillis timeSincePiConnected = 5000;
-int piDeadAfter = 2000; // time after which the pi is "disconnected"
-bool prevHeartbeatValue = 0;
-long prevHeartbeatPeriod1 = 4000; // to keep track of the previous ones (long: signed + 32-bit)
-long prevHeartbeatPeriod2 = 5000;
-long heartbeatRange = 700; //ms
-bool prevSparePinValue = 0;
+// Pi gestures: at most one per team every PI_TEAM_COOLDOWN_MS (the engine also waits 3 s per court half), so a
+// point for one team never blocks a gesture for the other
+#define PI_TEAM_COOLDOWN_MS 3000
+elapsedMillis timePiHome = PI_TEAM_COOLDOWN_MS;
+elapsedMillis timePiAway = PI_TEAM_COOLDOWN_MS;
 bool blueBorderShowing = false;
 bool gameWonFirstTime = true;
 bool SDSuccess = true;
@@ -250,18 +243,33 @@ unsigned long maxLoopMs = 0, lastLoopStartMs = 0;   // worst time between two pa
 #define COLOR_RAINBOW 257
 elapsedMillis timeSinceStateSent;
 
-// The Pi's score signals are 50 ms pulses. A line that just sits HIGH is not a pulse: while the Pi boots or shuts
-// down its GPIO 0-8 (including the two score lines) are pulled high for many seconds, and a floating wire can read
-// high too. Counting the level made the scoreboard announce "Point home" and add points over and over. A pulse now
-// counts once, when it ends, and only if it was high for PI_PULSE_MIN_MS..PI_PULSE_MAX_MS.
+// ---- Pi link (Serial3) ---------------------------------------------------------------------------------------
+// The vision engine says hello ("$C,PI,<version>*XX") about once a second while camera frames are flowing. The hello
+// is the only sign of life the Mega trusts: the link is up from the first one ("Raspberry Pi connected"), down after
+// PI_HELLO_TIMEOUT_MS without one ("disconnected"), and each hello blinks the heartbeat pixel. With no Pi, or a Pi
+// that is booting, shut down or hung, nothing arrives and only the buttons change the score.
+//   version 2: gestures arrive as "$C,PT,<LP|RP|LC|RC>,<id>*XX" (camera Left/Right half, Point or Cobra). The engine
+//              sends each one 3 times with the same id; the Mega applies an id once. The GPIO wires are ignored.
+//   version 1: an older engine that still pulses the GPIO wires (so either side can be updated first).
+#define PI_HELLO_TIMEOUT_MS 4000
+#define CAMERA_LEFT_IS_AWAY 1      // the camera's left half is the away team, its right half home (as wired, Oct 2026)
+#define RECENT_IDS 8               // ids remembered for de-duplication (copies of two events can interleave)
+elapsedMillis timeSincePiHello;
+bool piLinkUp = false;
+int piVersion = 0;
+int recentPtIds[RECENT_IDS];       // gesture ids already applied (-1 = empty); cleared when the link drops
+byte recentPtNext = 0;
+int recentScoreIds[RECENT_IDS];    // phone score taps already applied (the link service repeats each tap 3 times)
+byte recentScoreNext = 0;
+bool heartbeatDot = false;         // the heartbeat pixel (leds[126]) toggles on every hello
+bool heartbeatDotDirty = false;    // shown at the next quiet moment (see serviceSerialCommands)
+unsigned long linkPtApplied = 0, linkPtDup = 0;
+
+// Version 1 only: the GPIO score signals are 50 ms pulses. A line that just sits HIGH is not a pulse (the Pi pulls
+// GPIO 0-8 high for many seconds while it boots or shuts down, and a floating wire can read high), so a pulse counts
+// once, when it ends, and only if it was high for PI_PULSE_MIN_MS..PI_PULSE_MAX_MS.
 #define PI_PULSE_MIN_MS 15
 #define PI_PULSE_MAX_MS 400
-// Serial handshake: the vision engine sends "$C,PI,1*XX" about once a second while it is really running (camera
-// frames flowing). The Mega only acts on the Pi's score pulses while it has heard that in the last
-// PI_HELLO_TIMEOUT_MS, so nothing the Pi's pins do while it boots, shuts down or hangs can change the score.
-#define PI_HELLO_TIMEOUT_MS 4000
-elapsedMillis timeSincePiHello;
-bool piHelloSeen = false;
 bool piPulseHigh[4] = {false, false, false, false};
 unsigned long piPulseSince[4] = {0, 0, 0, 0};
 
@@ -332,7 +340,11 @@ void releaseSpeakerPin();
 void sendStateIfDue(bool force);
 void updateGameClock();
 bool piPulseEnded(int index, int pin);
-bool piHandshakeOk();
+void piGesture(bool home, bool cobra);
+void servicePiLink();
+bool idSeen(const int* ring, int id);
+void idRemember(int* ring, byte& next, int id);
+void clearIds(int* ring, byte& next);
 unsigned int gameSeconds();
 void homeUp();
 void homeDown();
@@ -360,6 +372,8 @@ void setup() {
   pinMode(PiPinHeartbeat, INPUT);
   pinMode(PiPinSurrenderHome, INPUT);
   pinMode(PiPinSurrenderAway, INPUT);
+  clearIds(recentPtIds, recentPtNext);
+  clearIds(recentScoreIds, recentScoreNext);
 
   //SD and speaker
   tmrpcm.speakerPin = SpeakerOutPin;  //5,6,11 or 46 on Mega, 9 on Uno, Nano, etc
@@ -486,153 +500,21 @@ void loop() {
       beep(50, 65);
   }
   
-  // Pi pulses (each line is tracked every loop, even when the Pi isn't trusted, so a stuck-high line is never mistaken for a pulse)
+  // GPIO pulses from a version-1 engine. Every line is tracked every loop (so a stuck-high line is never mistaken
+  // for a pulse) but only acted on while that engine's hello is fresh. A version-2 engine sends gestures over serial.
   bool piHomePulse = piPulseEnded(0, PiPinHome);
   bool piAwayPulse = piPulseEnded(1, PiPinAway);
   bool piHomeCobra = piPulseEnded(2, PiPinSurrenderHome);
   bool piAwayCobra = piPulseEnded(3, PiPinSurrenderAway);
-
-  // Home Up from Pi
-  if(piHomePulse && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
+  if(piLinkUp && piVersion == 1)
   {
-    homeScore = homeScore + 1; // increase score
-    timePiChange = 0; // Reset timer
-    noteEvent("HP");
-    if(!celebrationActive())
-    {
-      if (SDSuccess && WAVMode)
-        tmrpcm.play("PtHm.wav");
-      else 
-        beep(400, 200);
-    }
-    UpdateDisplay(); 
-    Serial.println("Point Home");
-  }
-  // Away Up from Pi
-  if(piAwayPulse && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
-  {
-    awayScore = awayScore + 1; // increase score
-    timePiChange = 0; // Reset timer
-    noteEvent("AP");
-    if(!celebrationActive())
-    {
-      if (SDSuccess && WAVMode)
-        tmrpcm.play("PtAwy.wav");
-      else 
-        beep(500, 200);
-    }
-    Serial.println("Point away");
-    UpdateDisplay(); 
+    if(piHomePulse) piGesture(true, false);
+    if(piAwayPulse) piGesture(false, false);
+    if(piHomeCobra) piGesture(true, true);
+    if(piAwayCobra) piGesture(false, true);
   }
 
-  //Surrender Cobra Home from Pi (Home down)
-  if(piHomeCobra && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
-  {
-    stopCelebration();
-    homeScore = homeScore - 1; // decrease score
-    if(homeScore < 0) homeScore = 0;
-    timePiChange = 0; // Reset timer
-    noteEvent("HC");
-    UpdateDisplay(); 
-    if (SDSuccess && WAVMode)
-      tmrpcm.play("SurHo.wav");
-    else 
-      beep(400, 300);
-    Serial.println("Surrender Cobra Home");
-  }
-  // Surrender Cobra Away from Pi (Away Down)
-  if(piAwayCobra && timePiChange > delayPiChange && raspiOn && piHandshakeOk())
-  {
-    stopCelebration();
-    awayScore = awayScore - 1; // decrease score
-    if(awayScore < 0) awayScore = 0;
-    timePiChange = 0; // Reset timer
-    noteEvent("AC");
-    UpdateDisplay(); 
-    if (SDSuccess && WAVMode)
-      tmrpcm.play("SurAw.wav");
-    else 
-      beep(500, 300);
-    Serial.println("Point away");
-  }
-  
-  // Heartbeat stuff
-  if(raspiOn && timeHeartbeat > 4000 && timeSincePiConnected > 7000)
-  {
-    // The pi is no longer processing frames 
-      if(firstTimePiOff)
-      {
-        Serial.println("Pi disconnected damnit from timer");
-        if (SDSuccess && WAVMode)
-          tmrpcm.play("PiDis.wav");
-        //else 
-          //tone(SpeakerOutPin, 500, 300);
-      }
-      firstTimePiOff = 0;
-      firstTimePiOn = 1;
-      raspiOn = 0;
-  }
-  if(digitalRead(PiPinHeartbeat) != prevHeartbeatValue)
-  {
-    Serial.println("sup");
-    // Must be SIGNED long: with unsigned, "prevHeartbeatPeriod1 - heartbeatRange" goes negative for any
-    // period < 700ms and wraps to ~4 billion, so the periods never match and the Pi gets disconnected.
-    long thisHeartbeatPeriod = (long)timeHeartbeat;
-    Serial.println("thisPeriod:  " + String(thisHeartbeatPeriod));
-    Serial.println("prevPeriod1: " + String(prevHeartbeatPeriod1));
-    Serial.println("prevPeriod2: " + String(prevHeartbeatPeriod2));
-    
-    // Fixed by Antigravity: lowered threshold from 300ms to 75ms to support high-speed Pi execution (up to 13 FPS)
-    // Also allow instant connection on boot if previous periods are still in initial uncalibrated state (>= 3000ms)
-    bool periodsMatch = (prevHeartbeatPeriod1 >= 3000) || 
-                        ((thisHeartbeatPeriod < prevHeartbeatPeriod1 + heartbeatRange &&
-                          thisHeartbeatPeriod > prevHeartbeatPeriod1 - heartbeatRange) &&
-                         (thisHeartbeatPeriod < prevHeartbeatPeriod2 + heartbeatRange &&
-                          thisHeartbeatPeriod > prevHeartbeatPeriod2 - heartbeatRange));
-
-    static int irregularHeartbeatStreak = 0; // Debounce irregular pulses
-
-    if (periodsMatch && thisHeartbeatPeriod > 75)
-       {
-        irregularHeartbeatStreak = 0; // Reset streak on valid pulse
-        raspiOn = 1;
-        if(firstTimePiOn)
-        {
-          timeSincePiConnected = 0; // This timer is used for where it "disconnects" within a few seconds of booting. 
-          Serial.println("Pi connected!!");
-          if (SDSuccess && WAVMode)  tmrpcm.play("PiCon.wav");
-          firstTimePiOff = 1;
-        }
-        firstTimePiOn = 0;
-       }
-    else {
-      irregularHeartbeatStreak++;
-      // Require 3 consecutive irregular pulses before declaring disconnected (prevents false disconnects on single frame jitter)
-      if(raspiOn == 1 && timeSincePiConnected > 7000 && irregularHeartbeatStreak >= 3)
-      {
-        // The pi is no longer processing frames 
-        if(firstTimePiOff)
-        {
-          Serial.println("Pi disconnected from irregular pulses");
-          if (SDSuccess && WAVMode)  tmrpcm.play("PiDis.wav");
-        }
-        firstTimePiOff = 0;
-        raspiOn = 0;
-      }
-    }
-    // Update our heartbeat history
-    prevHeartbeatPeriod2 = prevHeartbeatPeriod1;
-    prevHeartbeatPeriod1 = thisHeartbeatPeriod; 
-    
-    timeHeartbeat = 0; // reset timer
-    prevHeartbeatValue = digitalRead(PiPinHeartbeat);
-    if(digitalRead(PiPinHeartbeat)) // Indicator light for each frame processed
-      leds[126] = CRGB::White;
-    else leds[126] = CRGB::Black;
-    // A frame of 252 LEDs takes ~8 ms with interrupts off, and the WAV player needs those interrupts: refreshing
-    // right as a clip starts (e.g. "Raspberry Pi connected") made it stutter. The dot appears on the next refresh.
-    if(!tmrpcm.isPlaying()) FastLED.show();
-  }
+  servicePiLink();   // "disconnected" once the hellos stop
 
   // Brightness Slider
   if(analogBright.hasChanged())
@@ -659,12 +541,6 @@ void loop() {
         //Serial.println("Away color:  " + String(currentAwayColor));
         UpdateDisplay(); 
       }
-
-  { // tell the USB monitor when the handshake starts or stops
-    static bool prevHandshake = false;
-    bool hs = piHandshakeOk();
-    if(hs != prevHandshake) { prevHandshake = hs; Serial.println(hs ? "Pi handshake OK" : "Pi handshake lost"); }
-  }
 
   serviceAudio();           // celebration song / melody, non-blocking
   serviceSerialCommands();  // phone settings from the Pi
@@ -1021,9 +897,76 @@ unsigned int gameSeconds()
   return s > 65535UL ? 65535U : (unsigned int)s;
 }
 
-bool piHandshakeOk()
+// One Pi gesture: +1 (T-pose) or -1 (cobra) for a team, at most one per team every PI_TEAM_COOLDOWN_MS.
+// Same sounds and order as the old inline GPIO handlers.
+void piGesture(bool home, bool cobra)
 {
-  return piHelloSeen && timeSincePiHello < PI_HELLO_TIMEOUT_MS;
+  elapsedMillis& cooldown = home ? timePiHome : timePiAway;
+  if(cooldown < PI_TEAM_COOLDOWN_MS)
+  {
+    Serial.println(home ? "Pi gesture for home ignored (cooldown)" : "Pi gesture for away ignored (cooldown)");
+    return;
+  }
+  cooldown = 0;
+  if(!cobra)
+  {
+    if(home) homeScore++; else awayScore++;
+    noteEvent(home ? "HP" : "AP");
+    if(!celebrationActive())
+    {
+      if (SDSuccess && WAVMode)
+        tmrpcm.play(home ? "PtHm.wav" : "PtAwy.wav");
+      else
+        beep(home ? 400 : 500, 200);
+    }
+    UpdateDisplay();
+    Serial.println(home ? "Point Home" : "Point away");
+  }
+  else
+  {
+    stopCelebration();
+    if(home) { homeScore--; if(homeScore < 0) homeScore = 0; }
+    else     { awayScore--; if(awayScore < 0) awayScore = 0; }
+    noteEvent(home ? "HC" : "AC");
+    UpdateDisplay();
+    if (SDSuccess && WAVMode)
+      tmrpcm.play(home ? "SurHo.wav" : "SurAw.wav");
+    else
+      beep(home ? 400 : 500, 300);
+    Serial.println(home ? "Surrender Cobra Home" : "Surrender Cobra Away");
+  }
+}
+
+// Called every loop: the link goes down PI_HELLO_TIMEOUT_MS after the last hello
+void servicePiLink()
+{
+  if(piLinkUp && timeSincePiHello > PI_HELLO_TIMEOUT_MS)
+  {
+    piLinkUp = false;
+    piVersion = 0;
+    clearIds(recentPtIds, recentPtNext);   // a restarted engine starts a new id sequence
+    Serial.println("Pi disconnected (no hello)");
+    if (SDSuccess && WAVMode) tmrpcm.play("PiDis.wav");
+    sendStateIfDue(true);
+  }
+}
+
+bool idSeen(const int* ring, int id)
+{
+  for(int i = 0; i < RECENT_IDS; i++) if(ring[i] == id) return true;
+  return false;
+}
+
+void idRemember(int* ring, byte& next, int id)
+{
+  ring[next] = id;
+  next = (next + 1) % RECENT_IDS;
+}
+
+void clearIds(int* ring, byte& next)
+{
+  for(int i = 0; i < RECENT_IDS; i++) ring[i] = -1;
+  next = 0;
 }
 
 bool piPulseEnded(int index, int pin)
@@ -1076,7 +1019,7 @@ void sendStateIfDue(bool force)
 
   char body[64];
   int n = snprintf(body, sizeof(body), "S,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%u,%d",
-                   homeScore, awayScore, sportMode, volleyballScoreTo, (int)(raspiOn && piHandshakeOk()),
+                   homeScore, awayScore, sportMode, volleyballScoreTo, (int)piLinkUp,
                    colorCode(map(currentHomeColor, 0, 1023, 0, 255)),
                    colorCode(map(currentAwayColor, 0, 1023, 0, 255)),
                    shownDigits[0], shownDigits[1], shownDigits[2], shownDigits[3],
@@ -1245,9 +1188,14 @@ void setSoundMode(int mode)
   sendStateIfDue(true);
 }
 
-// ---- Commands from the Pi (phone settings) ---------------------------------------------------------
-// "$C,MODE,<0|1>*<XOR>" sport mode (resets the score, like the 4-button chord)
-// "$C,TO,<15|21|25>*<XOR>" volleyball game-to
+// ---- Commands from the Pi ------------------------------------------------------------------------------
+// From the vision engine (pi/arduino_protocol.py):
+//   "$C,PI,<1|2>*XX"                 hello, about once a second (see "Pi link")
+//   "$C,PT,<LP|RP|LC|RC>,<id>*XX"    gesture on the camera's Left/Right half: Point (+1) or Cobra (-1)
+// From the phone, via the link service (pi/scoreboard_link.py):
+//   "$C,SCORE,<HU|HD|AU|AD>[,<id>]*XX"  + / - buttons (each tap is repeated with the same id)
+//   "$C,MODE,<0|1>*XX"  sport (resets the score, like the 4-button chord)
+//   "$C,TO,<15|21|25>*XX"  volleyball game-to      "$C,SOUND,<0|1|2>*XX"  sound mode
 // XOR = hex XOR of the characters between $ and *. Anything malformed is ignored.
 void linkLog(const char* what, const char* line)
 {
@@ -1271,12 +1219,17 @@ void handleCommand(char* line)
   char* comma = strchr(name, ',');
   if(!comma) { linkRxBad++; linkLog("malformed", raw); return; }
   *comma = 0;
-  const char* arg = comma + 1;
+  char* arg = comma + 1;
   int value = atoi(arg);
 
   if(strcmp(name, "SCORE") == 0)
   {
-    // Phone +/- buttons: run the same code as the physical buttons (with a shorter 250ms rate limit)
+    // Phone +/- buttons: run the same code as the physical buttons (with a shorter 250ms rate limit). Each tap
+    // arrives up to 3 times with the same id; an id is applied once. (An id-less SCORE is an older link service.)
+    int id = -1;
+    char* idComma = strchr(arg, ',');
+    if(idComma) { *idComma = 0; id = atoi(idComma + 1); }
+    if(id > 0 && idSeen(recentScoreIds, id)) return;   // a repeat of a tap already applied
     bool ok = true;
     if(timeManualScoreChange <= 250) { linkLog("SCORE too soon", raw); return; }   // taps closer than 250ms apart are ignored
     if(strcmp(arg, "HU") == 0) homeUp();
@@ -1284,15 +1237,45 @@ void handleCommand(char* line)
     else if(strcmp(arg, "AU") == 0) awayUp();
     else if(strcmp(arg, "AD") == 0) awayDown();
     else ok = false;
-    if(ok) { linkRxGood++; linkLog("SCORE accepted", raw); }
+    if(ok) { linkRxGood++; linkLog("SCORE accepted", raw); if(id > 0) idRemember(recentScoreIds, recentScoreNext, id); }
     else { linkRxBad++; linkLog("unknown SCORE", raw); }
     return;
   }
-  if(strcmp(name, "PI") == 0 && value == 1)
+  if(strcmp(name, "PI") == 0 && (value == 1 || value == 2))
   {
-    // handshake from the vision engine (see piHandshakeOk); not logged, it arrives every second
-    piHelloSeen = true;
+    // Hello from the vision engine (see "Pi link"); not logged, it arrives every second
     timeSincePiHello = 0;
+    piVersion = value;
+    if(!piLinkUp)
+    {
+      piLinkUp = true;
+      Serial.print("Pi connected!! (hello v"); Serial.print(value); Serial.println(")");
+      if (SDSuccess && WAVMode) tmrpcm.play("PiCon.wav");
+      sendStateIfDue(true);
+    }
+    heartbeatDot = !heartbeatDot;
+    leds[126] = heartbeatDot ? CRGB::White : CRGB::Black;
+    heartbeatDotDirty = true;
+    return;
+  }
+  if(strcmp(name, "PT") == 0)
+  {
+    // Gesture from a version-2 engine: "PT,<L|R><P|C>,<id>", sent 3 times with the same id
+    char* idComma = strchr(arg, ',');
+    if(!idComma) { linkRxBad++; linkLog("malformed PT", raw); return; }
+    *idComma = 0;
+    int id = atoi(idComma + 1);
+    bool left = arg[0] == 'L', right = arg[0] == 'R';
+    bool point = arg[1] == 'P', cobra = arg[1] == 'C';
+    if(strlen(arg) != 2 || !(left || right) || !(point || cobra) || id < 1 || id > 255)
+    { linkRxBad++; linkLog("bad PT", raw); return; }
+    if(!piLinkUp || piVersion < 2) { linkLog("PT without a v2 hello", raw); return; }
+    if(idSeen(recentPtIds, id)) { linkPtDup++; return; }   // a repeat copy of an event already applied
+    idRemember(recentPtIds, recentPtNext, id);
+    linkPtApplied++; linkRxGood++;
+    linkLog("PT accepted", raw);
+    bool home = CAMERA_LEFT_IS_AWAY ? right : left;
+    piGesture(home, cobra);
     return;
   }
   if(strcmp(name, "SOUND") == 0 && value >= 0 && value <= 2)
@@ -1325,6 +1308,13 @@ void serviceSerialCommands()
     else if(cmdLen < sizeof(cmdBuf) - 1) cmdBuf[cmdLen++] = c;
     else cmdActive = false; // too long: not ours
   }
+  // The heartbeat pixel from the latest hello. A strip refresh has interrupts off for ~8 ms, which drops the bytes of
+  // a line still arriving, and makes a clip stutter, so wait for a quiet moment (no line in progress, no clip).
+  if(heartbeatDotDirty && !cmdActive && !Serial3.available() && !tmrpcm.isPlaying())
+  {
+    heartbeatDotDirty = false;
+    FastLED.show();
+  }
 #if LINK_DEBUG
   if(timeSinceLinkStats > 5000)   // ~6 ms of USB serial every 5 s (may briefly wait for buffer space)
   {
@@ -1334,6 +1324,9 @@ void serviceSerialCommands()
     Serial.print(" rxBytes="); Serial.print(linkRxBytes);
     Serial.print(" cmdOk="); Serial.print(linkRxGood);
     Serial.print(" cmdBad="); Serial.print(linkRxBad);
+    Serial.print(" pt="); Serial.print(linkPtApplied);
+    Serial.print(" ptDup="); Serial.print(linkPtDup);
+    Serial.print(" link="); Serial.print(piLinkUp ? piVersion : 0);
     Serial.print(" maxLoopMs="); Serial.println(maxLoopMs);
     maxLoopMs = 0;
   }

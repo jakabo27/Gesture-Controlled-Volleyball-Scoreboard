@@ -26,9 +26,9 @@ Hard rule from the start: **the Arduino keeps working 100% without the Pi or a p
 ```
                  state (one-way, checksummed)               BLE GATT notify
 Arduino Mega ───────────────────────────────▶ Pi 4 ───────────────────────────▶ phone page
-    ▲   ◀─────────────────────────────────────  │    ◀───────────────────────────  (Chrome / Bluefy)
-    │      commands (whitelisted, checksummed)  │          writes: score, settings,
-    └──── existing GPIO pulses (T-pose points) ─┘          T-pose switch, hello
+        ◀─────────────────────────────────────       ◀───────────────────────────  (Chrome / Bluefy)
+      hello + gestures (vision engine) and           writes: score, settings,
+      phone commands (link service), checksummed     T-pose switch, hello
 ```
 
 ### 1. Arduino → Pi (UART, Mega Serial3, 38400 baud)

@@ -34,7 +34,7 @@
     Volleyball Scoreboard: Raspberry Pi (Pi 4 / 3B+) to Arduino MEGA Wiring &amp; Pinout
   </text>
   <text x="660" y="70" fill="#94a3b8" font-family="Arial, sans-serif" font-size="13" text-anchor="middle">
-    Verified Hardware: Raspberry Pi 4 Model B (2GB Rev 1.5) | <tspan fill="#ff8ae8" font-weight="bold">PINK = phone-display UART link (UART2 on GPIO 0/1 needs a Pi 4)</tspan>
+    Verified Hardware: Raspberry Pi 4 Model B (2GB Rev 1.5) | <tspan fill="#ff8ae8" font-weight="bold">PINK = serial link, carries every Pi → Arduino signal</tspan> | other wires legacy; rows 1-4 cross in pairs (measured)
   </text>
 
   <!-- ==================== SECTION 1: SCHEMATIC SIGNAL MAPPING ==================== -->
@@ -55,8 +55,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1.5"/>
       <circle cx="25" cy="21" r="12" fill="#e11d48"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">29</text>
-      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 5 (D5) - Away Score (+1)</text>
-      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Active-High 50ms Pulse (Away T-Pose)</text>
+      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 5 (D5) - Home +1, camera right (legacy)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Measured: goes to Mega 45 | unused since serial</text>
     </g>
 
     <!-- Pin 31 (GPIO 6) -> Home Up -->
@@ -64,8 +64,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1.5"/>
       <circle cx="25" cy="21" r="12" fill="#e11d48"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">31</text>
-      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 6 (D6) - Home Score (+1)</text>
-      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Active-High 50ms Pulse (Home T-Pose)</text>
+      <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 6 (D6) - Away +1, camera left (legacy)</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Measured: goes to Mega 47 | unused since serial</text>
     </g>
 
     <!-- Pin 35 (GPIO 19) -> Home Cobra -->
@@ -73,8 +73,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ea580c" stroke-width="1.5"/>
       <circle cx="25" cy="21" r="12" fill="#ea580c"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">35</text>
-      <text x="50" y="19" fill="#fb923c" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 19 (D19) - Home Cobra (-1)</text>
-      <text x="50" y="34" fill="#fdba74" font-family="Arial, sans-serif" font-size="11">Orange Skinny Wire (Subtract Home)</text>
+      <text x="50" y="19" fill="#fb923c" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 19 (D19) - Away -1, camera left (legacy)</text>
+      <text x="50" y="34" fill="#fdba74" font-family="Arial, sans-serif" font-size="11">Measured: goes to Mega 43 | unused since serial</text>
     </g>
 
     <!-- Pin 40 (GPIO 21) -> Away Cobra -->
@@ -82,8 +82,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#eab308" stroke-width="1.5"/>
       <circle cx="25" cy="21" r="12" fill="#eab308"/>
       <text x="25" y="26" fill="#000000" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">40</text>
-      <text x="50" y="19" fill="#facc15" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 21 (D21) - Away Cobra (-1)</text>
-      <text x="50" y="34" fill="#fef08a" font-family="Arial, sans-serif" font-size="11">Yellow Skinny Wire (Subtract Away)</text>
+      <text x="50" y="19" fill="#facc15" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 21 (D21) - Home -1, camera right (legacy)</text>
+      <text x="50" y="34" fill="#fef08a" font-family="Arial, sans-serif" font-size="11">Meant for Mega 42: no signal arrives | unused</text>
     </g>
 
     <!-- Pin 37 (GPIO 26) -> Heartbeat -->
@@ -91,8 +91,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#10b981" stroke-width="1.5"/>
       <circle cx="25" cy="21" r="12" fill="#10b981"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">37</text>
-      <text x="50" y="19" fill="#4ade80" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 26 (D26) - Heartbeat Pulse</text>
-      <text x="50" y="34" fill="#86efac" font-family="Arial, sans-serif" font-size="11">Green Wire | Toggles every 1.0 s</text>
+      <text x="50" y="19" fill="#4ade80" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 26 (D26) - Heartbeat (legacy)</text>
+      <text x="50" y="34" fill="#86efac" font-family="Arial, sans-serif" font-size="11">Held low: the serial hello is the heartbeat</text>
     </g>
 
     <!-- Pin 33 (GPIO 13) -> Spare -->
@@ -118,8 +118,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ff2bd6" stroke-width="2"/>
       <circle cx="25" cy="21" r="12" fill="#ff2bd6" filter="url(#pinkGlow)"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">27</text>
-      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 0 (TXD2) - Phone link: Pi to Arduino</text>
-      <text x="50" y="34" fill="#f5c2ec" font-family="Arial, sans-serif" font-size="11">UART2 TX, 38400 baud | 1k series (phone commands)</text>
+      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 0 (TXD2) - Serial link: Pi to Arduino</text>
+      <text x="50" y="34" fill="#f5c2ec" font-family="Arial, sans-serif" font-size="11">38400 baud, 1k | hello 1/s, gestures, phone commands</text>
     </g>
 
     <!-- NEW (pink): Pin 28 (GPIO 1 / RXD2) <- Mega TX3 -->
@@ -127,7 +127,7 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ff2bd6" stroke-width="2"/>
       <circle cx="25" cy="21" r="12" fill="#ff2bd6" filter="url(#pinkGlow)"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">28</text>
-      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 1 (RXD2) - Phone link: score state in</text>
+      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">GPIO 1 (RXD2) - Serial link: score state in</text>
       <text x="50" y="34" fill="#f5c2ec" font-family="Arial, sans-serif" font-size="11">UART2 RX | from Mega TX3 through 5.1k/10k divider (3.3V)</text>
     </g>
 
@@ -229,7 +229,7 @@
       <circle cx="25" cy="21" r="12" fill="#0284c7"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">47</text>
       <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 47 (PiPinAway)</text>
-      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Increments Away Score | Plays PtAwy.wav</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Legacy: away +1 (camera-left T-pose)</text>
     </g>
 
     <!-- Arduino Pin 45 -> Home Score -->
@@ -238,7 +238,7 @@
       <circle cx="25" cy="21" r="12" fill="#0284c7"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">45</text>
       <text x="50" y="19" fill="#f8fafc" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 45 (PiPinHome)</text>
-      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Increments Home Score | Plays PtHm.wav</text>
+      <text x="50" y="34" fill="#9ca3af" font-family="Arial, sans-serif" font-size="11">Legacy: home +1 (camera-right T-pose)</text>
     </g>
 
     <!-- Arduino Pin 42 -> Home Cobra -->
@@ -247,7 +247,7 @@
       <circle cx="25" cy="21" r="12" fill="#ea580c"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">42</text>
       <text x="50" y="19" fill="#fb923c" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 42 (PiPinSurrenderHome)</text>
-      <text x="50" y="34" fill="#fdba74" font-family="Arial, sans-serif" font-size="11">Decrements Home Score | Plays SurHo.wav</text>
+      <text x="50" y="34" fill="#fdba74" font-family="Arial, sans-serif" font-size="11">Legacy: home -1 (camera-right cobra)</text>
     </g>
 
     <!-- Arduino Pin 43 -> Away Cobra -->
@@ -256,7 +256,7 @@
       <circle cx="25" cy="21" r="12" fill="#eab308"/>
       <text x="25" y="26" fill="#000000" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">43</text>
       <text x="50" y="19" fill="#facc15" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 43 (PiPinSurrenderAway)</text>
-      <text x="50" y="34" fill="#fef08a" font-family="Arial, sans-serif" font-size="11">Decrements Away Score | Plays SurAw.wav</text>
+      <text x="50" y="34" fill="#fef08a" font-family="Arial, sans-serif" font-size="11">Legacy: away -1 (camera-left cobra)</text>
     </g>
 
     <!-- Arduino Pin 46 -> Heartbeat -->
@@ -265,7 +265,7 @@
       <circle cx="25" cy="21" r="12" fill="#10b981"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">46</text>
       <text x="50" y="19" fill="#4ade80" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 46 (PiPinHeartbeat)</text>
-      <text x="50" y="34" fill="#86efac" font-family="Arial, sans-serif" font-size="11">LED 126 indicator | Keeps raspiOn = 1</text>
+      <text x="50" y="34" fill="#86efac" font-family="Arial, sans-serif" font-size="11">Ignored: the serial hello blinks LED 126</text>
     </g>
 
     <!-- Arduino Pin 44 -> Spare -->
@@ -291,8 +291,8 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ff2bd6" stroke-width="2"/>
       <circle cx="25" cy="21" r="12" fill="#ff2bd6" filter="url(#pinkGlow)"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">15</text>
-      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 15 (RX3) - Phone link: from Pi</text>
-      <text x="50" y="34" fill="#f5c2ec" font-family="Arial, sans-serif" font-size="11">Serial3 RX | from Pi pin 27 through 1k (phone commands)</text>
+      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 15 (RX3) - Serial link: from Pi</text>
+      <text x="50" y="34" fill="#f5c2ec" font-family="Arial, sans-serif" font-size="11">Serial3 RX | from Pi pin 27 via 1k: hello, gestures, phone</text>
     </g>
 
     <!-- NEW (pink): Mega Pin 14 (TX3) -> Pi Pin 28 -->
@@ -300,7 +300,7 @@
       <rect width="400" height="42" rx="6" fill="#1f2937" stroke="#ff2bd6" stroke-width="2"/>
       <circle cx="25" cy="21" r="12" fill="#ff2bd6" filter="url(#pinkGlow)"/>
       <text x="25" y="26" fill="#ffffff" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">14</text>
-      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 14 (TX3) - Phone link: score state out</text>
+      <text x="50" y="19" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="13" font-weight="bold">Pin 14 (TX3) - Serial link: score state out</text>
       <text x="50" y="34" fill="#f5c2ec" font-family="Arial, sans-serif" font-size="11">Serial3 TX, 5V | 5.1k series, 10k to GND, then Pi pin 28</text>
     </g>
 
@@ -347,22 +347,22 @@
     <line x1="116" y1="434" x2="154" y2="434" stroke="#ff2bd6" stroke-width="2"/>
     <line x1="116" y1="458" x2="225" y2="458" stroke="#e11d48" stroke-width="1.5"/>
     <rect x="225" y="447.5" width="320" height="21" rx="4" fill="#1e293b" stroke="#e11d48" stroke-width="1.5"/>
-    <text x="234" y="462" fill="#f43f5e" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 29 (GPIO 5): Away Score (+1)</text>
+    <text x="234" y="462" fill="#f43f5e" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 29 (GPIO 5): to Mega 45, legacy</text>
     <line x1="116" y1="482" x2="225" y2="482" stroke="#e11d48" stroke-width="1.5"/>
     <rect x="225" y="471.5" width="320" height="21" rx="4" fill="#1e293b" stroke="#e11d48" stroke-width="1.5"/>
-    <text x="234" y="486" fill="#f43f5e" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 31 (GPIO 6): Home Score (+1)</text>
+    <text x="234" y="486" fill="#f43f5e" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 31 (GPIO 6): to Mega 47, legacy</text>
     <line x1="116" y1="506" x2="225" y2="506" stroke="#6b7280" stroke-width="1.5"/>
     <rect x="225" y="495.5" width="320" height="21" rx="4" fill="#1e293b" stroke="#6b7280" stroke-width="1.5"/>
     <text x="234" y="510" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 33 (GPIO 13): Spare (Gray)</text>
     <line x1="116" y1="530" x2="225" y2="530" stroke="#ea580c" stroke-width="1.5"/>
     <rect x="225" y="519.5" width="320" height="21" rx="4" fill="#1e293b" stroke="#ea580c" stroke-width="1.5"/>
-    <text x="234" y="534" fill="#fb923c" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 35 (GPIO 19): Home Cobra (Orange)</text>
+    <text x="234" y="534" fill="#fb923c" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 35 (GPIO 19): to Mega 43, legacy</text>
     <line x1="116" y1="554" x2="225" y2="554" stroke="#10b981" stroke-width="1.5"/>
     <rect x="225" y="543.5" width="320" height="21" rx="4" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
-    <text x="234" y="558" fill="#4ade80" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 37 (GPIO 26): Heartbeat (Green)</text>
+    <text x="234" y="558" fill="#4ade80" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 37 (GPIO 26): Heartbeat, legacy</text>
     <line x1="176" y1="578" x2="225" y2="578" stroke="#3b82f6" stroke-width="1.5"/>
     <rect x="225" y="567.5" width="320" height="21" rx="4" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
-    <text x="234" y="582" fill="#60a5fa" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 39: GND  |  <tspan fill="#facc15">Pin 40 (GPIO 21): Away Cobra</tspan></text>
+    <text x="234" y="582" fill="#60a5fa" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">Pin 39: GND  |  <tspan fill="#facc15">Pin 40 (GPIO 21): to Mega 42, legacy</tspan></text>
     <circle cx="105" cy="122" r="8.5" fill="#f59e0b"/><text x="105" y="125" fill="#000" font-family="Arial, sans-serif" font-size="7" font-weight="bold" text-anchor="middle">1</text>
     <circle cx="165" cy="122" r="8.5" fill="#ef4444"/><text x="165" y="125" fill="#fff" font-family="Arial, sans-serif" font-size="7" font-weight="bold" text-anchor="middle">2</text>
     <circle cx="105" cy="146" r="8.5" fill="#374151"/><text x="105" y="149" fill="#9ca3af" font-family="Arial, sans-serif" font-size="7" font-weight="bold" text-anchor="middle">3</text>
@@ -406,7 +406,7 @@
 
     <!-- Brackets -->
     <path d="M 70,422 L 55,422 L 55,446 L 70,446" fill="none" stroke="#ff2bd6" stroke-width="2.5"/>
-    <text x="50" y="435" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="end">Phone link</text>
+    <text x="50" y="435" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="end">Serial link</text>
     <text x="50" y="447" fill="#9ca3af" font-family="Arial, sans-serif" font-size="9" text-anchor="end">(row 14: 27 &amp; 28)</text>
     <path d="M 70,446 L 55,446 L 55,590 L 70,590" fill="none" stroke="#f43f5e" stroke-width="2"/>
     <text x="50" y="510" fill="#f43f5e" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="end">Scoreboard</text>
@@ -432,7 +432,7 @@
       <text x="15" y="130" fill="#4ade80" font-family="Arial, sans-serif" font-size="11" font-weight="bold">The Golden Rules for your Scoreboard:</text>
       <text x="15" y="150" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10.5">• Score wires: <tspan fill="#e11d48" font-weight="bold">LEFT (ODD)</tspan> column, pins 29 to 39 (GND)</text>
       <text x="15" y="170" fill="#f8fafc" font-family="Arial, sans-serif" font-size="10.5">• Pin 40 (yellow) is right across from GND 39</text>
-      <text x="15" y="194" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">• Phone link: the row ABOVE the cluster:</text>
+      <text x="15" y="194" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="10.5" font-weight="bold">• Serial link: the row ABOVE the cluster:</text>
       <text x="25" y="212" fill="#ff8ae8" font-family="Arial, sans-serif" font-size="10.5">pin 27 (left) and pin 28 (right), row 14</text>
     </g>
 
