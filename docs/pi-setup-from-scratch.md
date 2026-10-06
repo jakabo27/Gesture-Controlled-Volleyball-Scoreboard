@@ -82,6 +82,7 @@ Copy the repo's `pi/` folder contents to `/home/pi/Documents/` (the code expects
 ```
 /home/pi/Documents/PoseEstimationJT_Optimized.py
 /home/pi/Documents/arduino_protocol.py
+/home/pi/Documents/net_pole.py
 /home/pi/Documents/myDisplayFunctions.py
 /home/pi/Documents/scoreboard_link.py
 /home/pi/Documents/resources/saved_model_192x256/model_float16_quant.tflite

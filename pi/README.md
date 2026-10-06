@@ -5,6 +5,7 @@ Everything here is a copy of what runs on the scoreboard's Pi. The file layout m
 | File | What it is |
 |---|---|
 | `arduino_protocol.py` | The serial messages to the Arduino (hello, gestures) and `ArduinoLink`, the thread that sends them; imported by the engine |
+| `net_pole.py` | Finds the near net pole in the picture and tracks it, so the engine's left/right split sits on the real net; imported by the engine |
 | `PoseEstimationJT_Optimized.py` | The whole vision engine: camera stream, two-pass MoveNet inference, T-pose / cobra rules, net-line calibration, keystone estimator, GPIO output, heartbeat, watchdogs, OLED, field capture and pose-event logging |
 | `myDisplayFunctions.py` | SSD1351 OLED helper (Adafruit Blinka + `adafruit_rgb_display`) |
 | `resources/saved_model_192x256/model_float16_quant.tflite` | MoveNet MultiPose Lightning, 192×256 input, float16 TFLite |

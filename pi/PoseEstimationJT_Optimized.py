@@ -43,6 +43,7 @@ import cv2 as cv
 import numpy as np
 
 import arduino_protocol   # Pi -> Arduino serial messages (pi/arduino_protocol.py, next to this file)
+import net_pole           # optical net-pole locator (pi/net_pole.py, next to this file)
 
 # Hardware platform detection
 IS_RPI = (os.name != 'nt') and (not sys.platform.startswith('darwin'))
@@ -117,7 +118,8 @@ CLOSE_RANGE_SHOULDER_PX = 80.0    # close-range player: shoulders at least this 
 CLOSE_RANGE_TOP_FRACTION = 0.15   # ... and within the top 15% of the frame (head and raised hands cut off)
 COBRA_HOLD_SECONDS = 0.80         # Surrender cobra must be held for >= 0.8s (prevents triggers on sets)
 SCORE_COOLDOWN = 3.0              # Seconds to wait after a point before accepting another
-MAX_CENTER_DRIFT = 0.07           # Net center clamped to [0.43, 0.57]
+MAX_CENTER_DRIFT = 0.07           # Net center clamped to [0.43, 0.57] while it is estimated from the players
+NET_POLE_LOCK = os.environ.get('SCOREBOARD_NET_POLE', '1') != '0'   # lock the net line onto the detected pole (0 = off)
 SAVE_MIN_SHOULDER_PX = 15.0       # periodic frames are only saved while a person with both shoulders found, at least this far apart, is in view
 SAVE_INTERVAL_SECONDS = 3.0       # Periodic capture interval: ~130 MB/hour (was 0.75 s / ~530 MB/hour). Fewer SD
                                   # writes = less exposure to power-cut damage; pose bursts cover the frames that matter
@@ -785,6 +787,14 @@ class NetCenterCalibrator:
         self.first_point_scored = False
         self.last_calibration_time = time.monotonic()
         self.quality_frames = []
+        self.locked = False   # True once the net line follows the detected pole (net_pole.NetPoleTracker)
+
+    def lock_to_pole(self, x):
+        """The pole was found: that is where the net is, whatever the players are doing. Replaces the player-based
+        estimate (and its +/-MAX_CENTER_DRIFT clamp) for as long as the pole is known."""
+        self.center_x = self.nominal_center = float(x)
+        self.locked = True
+        self.quality_frames = []
 
     @property
     def interval(self):
@@ -799,6 +809,9 @@ class NetCenterCalibrator:
                 self.quality_frames.append((med_l, med_r))
 
     def update(self, t):
+        if self.locked:
+            self.quality_frames = []
+            return
         if (t - self.last_calibration_time) >= self.interval:
             self.last_calibration_time = t
             if len(self.quality_frames) >= 4:
@@ -1210,6 +1223,8 @@ def main():
     # (no warm-up sleep: the main loop simply waits until the camera delivers its first frame)
 
     calibrator = NetCenterCalibrator(initial_center=0.50)
+    pole_tracker = net_pole.NetPoleTracker() if NET_POLE_LOCK else None
+    print(f"Net pole lock: {'on' if NET_POLE_LOCK else 'off'}", flush=True)
     keystone = KeystoneEstimator()
     capture_saver = AsyncCaptureSaver()
 
@@ -1278,6 +1293,14 @@ def main():
             # Cooldown management
             if left_cooldown > 0 and t > left_cooldown: left_cooldown = 0.0
             if right_cooldown > 0 and t > right_cooldown: right_cooldown = 0.0
+
+            # Net line: follow the detected pole (a few ms every few seconds); without one, the players-based estimate runs
+            if pole_tracker is not None:
+                new_pole = pole_tracker.update(t, raw_copy)
+                if new_pole is not None:
+                    print(f"[NET POLE] net line {calibrator.center_x:.3f} -> {new_pole:.3f} (pole found, "
+                          f"{'locked again' if calibrator.locked else 'first lock'})", flush=True)
+                    calibrator.lock_to_pole(new_pole)
 
             # Dynamic net split with 12% overlap margin:
             # Outstretched arms of players standing 4 ft away are completely in-frame!
@@ -1491,7 +1514,7 @@ def main():
                     pass
                 loop_ms = 1000.0 * (t - status_start) / max(1, status_loops)
                 print(f"[STATUS] loop={loop_ms:.0f}ms ({1000.0 / loop_ms:.1f} fps) threads={NUM_THREADS} "
-                      f"net_center={calibrator.center_x:.3f} keystone={keystone.slope:.1f}deg/x{keystone.offset:+.1f} "
+                      f"net_center={calibrator.center_x:.3f}{' (pole)' if calibrator.locked else ''} keystone={keystone.slope:.1f}deg/x{keystone.offset:+.1f} "
                       f"temp={temp_c:.1f}C cpu={cpu_mhz}MHz periodic_saved={periodic_saved} empty_frames_skipped={periodic_skipped}")
                 status_start = t
                 status_loops = 0
