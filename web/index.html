@@ -121,6 +121,16 @@
           </div>
         </div>
         <p class="seg-help">Effects: the usual sounds &middot; Voice: says &ldquo;Point home&rdquo; / &ldquo;Point away&rdquo; &middot; Tones: plain beeps</p>
+        <div class="seg-row">
+          <span class="seg-label">Detection</span>
+          <div class="seg four" role="group" aria-label="T-pose detection strictness">
+            <button type="button" data-cmd="STRICT" data-value="0" title="Arms must be close to level">Stricter</button>
+            <button type="button" data-cmd="STRICT" data-value="1" title="Arms may droop a little (recommended)">Standard</button>
+            <button type="button" data-cmd="STRICT" data-value="2" title="Arms may droop quite low">Looser</button>
+            <button type="button" data-cmd="STRICT" data-value="3" title="Arms out and down count; may score people just standing with arms away from their sides">Loosest</button>
+          </div>
+        </div>
+        <p class="seg-help">Detection is how closely arms must match a T-pose. Stricter: close to level &middot; Standard: a little droop is fine &middot; Looser: low arms count &middot; Loosest: arms out and down count too, and it may score when someone just stands with their arms away from their sides</p>
       </fieldset>
 
 

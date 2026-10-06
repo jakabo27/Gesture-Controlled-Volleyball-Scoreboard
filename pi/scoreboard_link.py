@@ -17,7 +17,8 @@ forwarded to the Arduino, as checksummed lines on the same UART:
 
 Each command is written COMMAND_COPIES times, COMMAND_COPY_GAP apart, by one writer thread that leaves at least
 COMMAND_MIN_GAP between lines: a line that reaches the Arduino while it refreshes its LEDs (interrupts off ~8 ms)
-can lose bytes, and one surviving copy is enough. TPOSE,0|1 is handled here (see TPOSE_DISABLED_FILE).
+can lose bytes, and one surviving copy is enough. TPOSE,0|1 and STRICT,0-3 are handled here (see TPOSE_DISABLED_FILE
+and STRICTNESS_FILE).
 
 BLE uses BlueZ's D-Bus API (BlueZ 5.50 on Raspbian Buster) through python3-dbus and python3-gi, so it needs no
 pip packages. Bluetooth is started ~20 s after boot by scoreboard-bt.timer; until bluetoothd appears (and after
@@ -50,8 +51,9 @@ COMMAND_CHAR_UUID = 'b3710003-1a78-4239-800f-cf4fa9544bbe'  # write: ASCII comma
 SECURE_WRITES = os.environ.get('SCOREBOARD_BLE_SECURE', '0') == '1'
 
 # The only commands the phone may send: sport mode, volleyball game-to, score +/- (forwarded to the Arduino) and
-# TPOSE,0|1 (handled here: switches the Pi's gesture scoring off/on, never forwarded).
-COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25)|TPOSE,[01]|SOUND,[012]|SCORE,(HU|HD|AU|AD))$')
+# TPOSE,0|1 (handled here: switches the Pi's gesture scoring off/on, never forwarded) and STRICT,0-3 (handled here: the
+# detection strictness the vision engine uses, never forwarded).
+COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25)|TPOSE,[01]|SOUND,[012]|STRICT,[0-3]|SCORE,(HU|HD|AU|AD))$')
 
 # T-pose detection switch shared with the vision engine (PoseEstimationJT_Optimized.py). The file's presence means
 # "disabled". /dev/shm is a RAM disk, so every boot starts with detection enabled.
@@ -60,6 +62,31 @@ TPOSE_DISABLED_FILE = os.environ.get('SCOREBOARD_TPOSE_FLAG', '/dev/shm/scoreboa
 
 def tpose_enabled():
     return not os.path.exists(TPOSE_DISABLED_FILE)
+
+
+# T-pose detection strictness chosen on the phone: 0 Stricter, 1 Standard, 2 Looser, 3 Loosest (the presets live in
+# PoseEstimationJT_Optimized.py, which reads the same file, same default path). Unlike the switch above it is kept on the
+# SD card so it survives a reboot; it changes rarely and is written atomically, so a power cut can't leave it half-written.
+STRICTNESS_FILE = os.environ.get('SCOREBOARD_STRICTNESS_FILE', '/home/pi/Documents/scoreboard_strictness.txt')
+DEFAULT_STRICTNESS = 1
+
+
+def get_strictness():
+    try:
+        with open(STRICTNESS_FILE) as f:
+            v = int(f.read().strip())
+    except (OSError, ValueError):
+        return DEFAULT_STRICTNESS
+    return v if 0 <= v <= 3 else DEFAULT_STRICTNESS
+
+
+def set_strictness(v):
+    tmp = STRICTNESS_FILE + '.tmp'
+    with open(tmp, 'w') as f:
+        f.write('%d' % v + chr(10))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, STRICTNESS_FILE)
 
 
 def set_tpose_enabled(on):
@@ -99,7 +126,8 @@ EVENTS = ['', 'BOOT', 'HU', 'HD', 'AU', 'AD', 'HP', 'AP', 'HC', 'AC', 'RS', 'HW'
 # BLE state packet, 19 bytes (fits the default ATT MTU of 23 without a long read). Little endian.
 #   B  version (1)
 #   B  flags: bit0 Pi heartbeat accepted by the Arduino (gestures live), bit1 Arduino data fresh,
-#      bit2 T-pose detection enabled, bits 3-4 sound mode, bit5 game clock running
+#      bit2 T-pose detection enabled, bits 3-4 sound mode, bit5 game clock running,
+#      bits 6-7 detection strictness (0 stricter, 1 standard, 2 looser, 3 loosest)
 #   B  home score     B  away score     (clamped to 0-255)
 #   B  sport mode (0 volleyball, 1 tennis)
 #   B  game-to score
@@ -116,6 +144,7 @@ FLAG_FRESH = 0x02
 FLAG_TPOSE_ON = 0x04   # T-pose detection enabled (the Pi's own switch, see TPOSE_DISABLED_FILE)
 FLAG_CLOCK_RUNNING = 0x20
 FLAG_SOUND_SHIFT = 3   # bits 3-4: sound mode 0 effects, 1 'Point home/away' voice, 2 tones
+FLAG_STRICT_SHIFT = 6  # bits 6-7: T-pose detection strictness 0-3 (STRICTNESS_FILE)
 
 
 def without_age(packet):
@@ -183,11 +212,12 @@ def build_command(text, command_id=None):
 def pack_state(state, age_s):
     """Pack a parsed state (or None = nothing received yet) into the BLE packet."""
     if state is None:
-        return struct.pack(PACKET_FORMAT, PACKET_VERSION, FLAG_TPOSE_ON if tpose_enabled() else 0, 0, 0, 0, 21,
+        return struct.pack(PACKET_FORMAT, PACKET_VERSION,
+                           (FLAG_TPOSE_ON if tpose_enabled() else 0) | (get_strictness() << FLAG_STRICT_SHIFT), 0, 0, 0, 21,
                            COLOR_WHITE, COLOR_WHITE, -1, 0, -1, 0, 0, 0, 255, 0)
     flags = ((FLAG_PI_ON if state['pi_on'] else 0) | (FLAG_FRESH if age_s < FRESH_SECONDS else 0) |
              (FLAG_TPOSE_ON if tpose_enabled() else 0) | (state.get('sound_mode', 0) << FLAG_SOUND_SHIFT) |
-             (FLAG_CLOCK_RUNNING if state.get('clock_running') else 0))
+             (FLAG_CLOCK_RUNNING if state.get('clock_running') else 0) | (get_strictness() << FLAG_STRICT_SHIFT))
 
     def u8(v):
         return max(0, min(255, v))
@@ -232,6 +262,14 @@ class LinkState:
             except OSError as e:
                 return 'cannot change the T-pose switch: %s' % e
             log('T-pose detection %s (from the phone)' % ('ENABLED' if on else 'DISABLED'))
+            return None
+        if text.strip().startswith('STRICT,'):
+            level = int(text.strip().split(',')[1])
+            try:
+                set_strictness(level)
+            except OSError as e:
+                return 'cannot save the detection strictness: %s' % e
+            log('detection strictness %d (%s, from the phone)' % (level, ('stricter', 'standard', 'looser', 'loosest')[level]))
             return None
         with self._lock:
             if self.serial is None:

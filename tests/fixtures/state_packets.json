@@ -1,11 +1,12 @@
 [
  {
   "name": "boot",
-  "packet": "01060000001500010001ff00ff0001000c0000",
+  "packet": "01460000001500010001ff00ff0001000c0000",
   "expect": {
    "piOn": false,
    "fresh": true,
    "tposeOn": true,
+   "strictness": 1,
    "home": 0,
    "away": 0,
    "mode": 0,
@@ -28,11 +29,12 @@
  },
  {
   "name": "mid game, hues",
-  "packet": "01070e0c0015a00000000104010206250c0000",
+  "packet": "01470e0c0015a00000000104010206250c0000",
   "expect": {
    "piOn": true,
    "fresh": true,
    "tposeOn": true,
+   "strictness": 1,
    "home": 14,
    "away": 12,
    "mode": 0,
@@ -55,11 +57,12 @@
  },
  {
   "name": "rainbow vs white, voice sound",
-  "packet": "010f0917001901010001ff09020304ff0c0000",
+  "packet": "014f0917001901010001ff09020304ff0c0000",
   "expect": {
    "piOn": true,
    "fresh": true,
    "tposeOn": true,
+   "strictness": 1,
    "home": 9,
    "away": 23,
    "mode": 0,
@@ -82,11 +85,12 @@
  },
  {
   "name": "tennis advantage, tones",
-  "packet": "0116050401156000e0000a0b000c02030c0000",
+  "packet": "0156050401156000e0000a0b000c02030c0000",
   "expect": {
    "piOn": false,
    "fresh": true,
    "tposeOn": true,
+   "strictness": 1,
    "home": 5,
    "away": 4,
    "mode": 1,
@@ -109,11 +113,12 @@
  },
  {
   "name": "home wins, frozen clock",
-  "packet": "0107151300152000c000020101090b780cfe05",
+  "packet": "0147151300152000c000020101090b780cfe05",
   "expect": {
    "piOn": true,
    "fresh": true,
    "tposeOn": true,
+   "strictness": 1,
    "home": 21,
    "away": 19,
    "mode": 0,
@@ -136,11 +141,12 @@
  },
  {
   "name": "clock running",
-  "packet": "01270302001564006400ff03ff0204090cffff",
+  "packet": "01670302001564006400ff03ff0204090cffff",
   "expect": {
    "piOn": true,
    "fresh": true,
    "tposeOn": true,
+   "strictness": 1,
    "home": 3,
    "away": 2,
    "mode": 0,
@@ -159,6 +165,118 @@
    "soundMode": 0,
    "clockSecs": 65535,
    "clockRunning": true
+  }
+ },
+ {
+  "name": "detection strictness 0",
+  "packet": "01070e0c0015a00000000104010206250c0000",
+  "expect": {
+   "piOn": true,
+   "fresh": true,
+   "tposeOn": true,
+   "strictness": 0,
+   "home": 14,
+   "away": 12,
+   "mode": 0,
+   "scoreTo": 21,
+   "homeColor": 160,
+   "awayColor": 0,
+   "digits": [
+    1,
+    4,
+    1,
+    2
+   ],
+   "event": "HP",
+   "eventSeq": 37,
+   "ageSeconds": 1.2,
+   "soundMode": 0,
+   "clockSecs": 0,
+   "clockRunning": false
+  }
+ },
+ {
+  "name": "detection strictness 1",
+  "packet": "01470e0c0015a00000000104010206250c0000",
+  "expect": {
+   "piOn": true,
+   "fresh": true,
+   "tposeOn": true,
+   "strictness": 1,
+   "home": 14,
+   "away": 12,
+   "mode": 0,
+   "scoreTo": 21,
+   "homeColor": 160,
+   "awayColor": 0,
+   "digits": [
+    1,
+    4,
+    1,
+    2
+   ],
+   "event": "HP",
+   "eventSeq": 37,
+   "ageSeconds": 1.2,
+   "soundMode": 0,
+   "clockSecs": 0,
+   "clockRunning": false
+  }
+ },
+ {
+  "name": "detection strictness 2",
+  "packet": "01870e0c0015a00000000104010206250c0000",
+  "expect": {
+   "piOn": true,
+   "fresh": true,
+   "tposeOn": true,
+   "strictness": 2,
+   "home": 14,
+   "away": 12,
+   "mode": 0,
+   "scoreTo": 21,
+   "homeColor": 160,
+   "awayColor": 0,
+   "digits": [
+    1,
+    4,
+    1,
+    2
+   ],
+   "event": "HP",
+   "eventSeq": 37,
+   "ageSeconds": 1.2,
+   "soundMode": 0,
+   "clockSecs": 0,
+   "clockRunning": false
+  }
+ },
+ {
+  "name": "detection strictness 3",
+  "packet": "01c70e0c0015a00000000104010206250c0000",
+  "expect": {
+   "piOn": true,
+   "fresh": true,
+   "tposeOn": true,
+   "strictness": 3,
+   "home": 14,
+   "away": 12,
+   "mode": 0,
+   "scoreTo": 21,
+   "homeColor": 160,
+   "awayColor": 0,
+   "digits": [
+    1,
+    4,
+    1,
+    2
+   ],
+   "event": "HP",
+   "eventSeq": 37,
+   "ageSeconds": 1.2,
+   "soundMode": 0,
+   "clockSecs": 0,
+   "clockRunning": false
   }
  }
 ]

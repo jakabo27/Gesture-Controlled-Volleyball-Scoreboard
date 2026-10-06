@@ -190,6 +190,7 @@ legend { color: var(--muted); font-size: 13px; text-transform: uppercase; letter
 .seg button { flex: 1; padding: 10px 6px; background: transparent; color: var(--ink); border: 0; font-weight: 700;
   font-size: 15px; cursor: pointer; }
 .seg button + button { border-left: 1px solid var(--line); }
+.seg.four button { font-size: 13px; padding: 10px 2px; }   /* four labels (Stricter .. Loosest) fit a narrow phone */
 .seg button.on { background: var(--accent); color: #fff; }
 .seg button.sending { opacity: 0.5; }
 .seg button:disabled { opacity: 0.35; cursor: default; }

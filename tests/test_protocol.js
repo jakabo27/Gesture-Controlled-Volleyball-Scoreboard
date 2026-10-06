@@ -65,8 +65,11 @@ check('phone commands match the Pi whitelist', () => {
   assert.strictEqual(P.commandText('SOUND', 2), 'SOUND,2');
   assert.throws(() => P.commandText('SOUND', 3));
   assert.throws(() => P.commandText('TPOSE', 2));
+  for (const level of [0, 1, 2, 3]) assert.strictEqual(P.commandText('STRICT', level), 'STRICT,' + level);
+  assert.throws(() => P.commandText('STRICT', 4));
+  assert.throws(() => P.commandText('STRICT', -1));
   const pi = fs.readFileSync(path.join(__dirname, '..', 'pi', 'scoreboard_link.py'), 'utf8');
-  assert.ok(pi.includes("COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25)|TPOSE,[01]|SOUND,[012]|SCORE,(HU|HD|AU|AD))$')"));
+  assert.ok(pi.includes("COMMAND_RE = re.compile(r'^(MODE,[01]|TO,(15|21|25)|TPOSE,[01]|SOUND,[012]|STRICT,[0-3]|SCORE,(HU|HD|AU|AD))$')"));
   assert.ok(pi.includes(P.COMMAND_CHAR_UUID));
   assert.ok(pi.includes("AUTH_TOKEN = '" + P.AUTH_TOKEN + "'"), 'page and Pi must agree on the hello token');
   assert.strictEqual(P.helloText(), 'HELLO,' + P.AUTH_TOKEN);

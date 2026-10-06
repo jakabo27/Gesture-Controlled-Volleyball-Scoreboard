@@ -38,6 +38,8 @@ class FakePort:
 # path so running the tests never touches a real Pi's switch
 DEFAULT_SWITCH_PATH = '/dev/shm/scoreboard_tpose_disabled'
 link.TPOSE_DISABLED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', '.tpose_disabled_test')
+DEFAULT_STRICTNESS_PATH = '/home/pi/Documents/scoreboard_strictness.txt'
+link.STRICTNESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', '.strictness_test')
 
 SKETCH = os.path.join(ROOT, 'arduino', 'ScoreboardVolleyballChangeWinning', 'ScoreboardVolleyballChangeWinning.ino')
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures', 'state_packets.json')
@@ -114,7 +116,8 @@ class LinkProtocolTest(unittest.TestCase):
         self.assertEqual(stale[16], 100)   # age byte (the clock follows it)
         empty = link.pack_state(None, 999)
         self.assertEqual(len(empty), 19)
-        self.assertEqual(empty[1], link.FLAG_TPOSE_ON)   # nothing received yet; T-pose detection is on by default
+        # nothing received yet; T-pose detection is on by default, at the Standard strictness
+        self.assertEqual(empty[1], link.FLAG_TPOSE_ON | (1 << link.FLAG_STRICT_SHIFT))
 
     def test_commands(self):
         line = link.build_command('TO,25')
@@ -125,10 +128,12 @@ class LinkProtocolTest(unittest.TestCase):
             x ^= ord(ch)
         self.assertEqual(int(cs, 16), x)
         self.assertIsNotNone(link.build_command('MODE,1'))
-        for ok in ['SCORE,HU', 'SCORE,HD', 'SCORE,AU', 'SCORE,AD', 'TPOSE,0', 'TPOSE,1', 'SOUND,0', 'SOUND,1', 'SOUND,2']:
+        for ok in ['SCORE,HU', 'SCORE,HD', 'SCORE,AU', 'SCORE,AD', 'TPOSE,0', 'TPOSE,1', 'SOUND,0', 'SOUND,1', 'SOUND,2',
+                   'STRICT,0', 'STRICT,1', 'STRICT,2', 'STRICT,3']:
             self.assertIsNotNone(link.build_command(ok), ok)
         for bad in ['TO,30', 'MODE,2', 'HU', 'TO,25;MODE,1', '', 'mode,1', 'SCORE,HP', 'SCORE,H', 'SCORE,HU;SCORE,HU',
-                    'TPOSE,2', 'SCORE,RS', 'RESET', 'SOUND,3', 'SOUND,-1']:
+                    'TPOSE,2', 'SCORE,RS', 'RESET', 'SOUND,3', 'SOUND,-1', 'STRICT,4', 'STRICT,-1', 'STRICT,', 'STRICT,10',
+                    'STRICT,1;STRICT,2']:
             self.assertIsNone(link.build_command(bad), bad)
         # the sketch must parse exactly these command names and values
         src = open(SKETCH, encoding='utf-8').read()
@@ -264,20 +269,70 @@ class LinkProtocolTest(unittest.TestCase):
         with open(os.path.join(ROOT, 'pi', 'arduino_protocol.py'), encoding='utf-8') as f:
             self.assertIn('os.path.exists(self.tpose_disabled_file)', f.read())
 
+    def test_detection_strictness(self):
+        path = link.STRICTNESS_FILE
+
+        def clean():
+            for p in (path, path + '.tmp'):
+                if os.path.exists(p):
+                    os.remove(p)
+        clean()
+        state = link.parse_state_line(arduino_line(*CASES[1][1]))
+        try:
+            self.assertEqual(link.get_strictness(), 1, 'Standard until the phone chooses')
+            self.assertEqual((link.pack_state(state, 0.5)[1] >> link.FLAG_STRICT_SHIFT) & 3, 1)
+            ls = link.LinkState()
+            for level in (0, 3, 2, 1):
+                self.assertIsNone(ls.send_command('STRICT,%d' % level))     # handled on the Pi, no UART needed
+                self.assertEqual(link.get_strictness(), level)
+                for packet in (link.pack_state(state, 0.5), link.pack_state(None, 999)):
+                    self.assertEqual((packet[1] >> link.FLAG_STRICT_SHIFT) & 3, level)
+                    self.assertTrue(packet[1] & link.FLAG_TPOSE_ON, 'the other flag bits are untouched')
+                    self.assertEqual(len(packet), 19)
+            self.assertFalse(os.path.exists(path + '.tmp'), 'written atomically')
+            self.assertEqual(open(path).read().strip(), '1')
+            for junk in ('', 'x', '7', '-1'):                                # a damaged file means Standard
+                with open(path, 'w') as f:
+                    f.write(junk)
+                self.assertEqual(link.get_strictness(), 1, repr(junk))
+        finally:
+            clean()
+        # the service and the vision engine must agree on the file; the engine must read it and pass it on
+        with open(os.path.join(ROOT, 'pi', 'scoreboard_link.py'), encoding='utf-8') as f:
+            self.assertIn(DEFAULT_STRICTNESS_PATH, f.read())
+        with open(os.path.join(ROOT, 'pi', 'PoseEstimationJT_Optimized.py'), encoding='utf-8') as f:
+            engine = f.read()
+        self.assertIn(DEFAULT_STRICTNESS_PATH, engine)
+        self.assertIn('strictness = read_strictness(t)', engine)
+        self.assertIn('limits = STRICTNESS_PRESETS[strictness]', engine)
+        self.assertIn("tpose_confirmed(tpose_window[s], limits['hold'], limits['window'])", engine)
+
     def test_write_fixtures_for_js(self):
+        def expect(args, strictness):
+            return {'piOn': bool(args[4]), 'fresh': True, 'tposeOn': True, 'strictness': strictness, 'home': args[0],
+                    'away': args[1], 'mode': args[2], 'scoreTo': args[3], 'homeColor': args[5], 'awayColor': args[6],
+                    'digits': args[7], 'event': args[8], 'eventSeq': args[9], 'ageSeconds': 1.2,
+                    'soundMode': args[10] if len(args) > 10 else 0,
+                    'clockSecs': (args[11] if len(args) > 11 else (0, 0))[0],
+                    'clockRunning': bool((args[11] if len(args) > 11 else (0, 0))[1])}
+        if os.path.exists(link.STRICTNESS_FILE):
+            os.remove(link.STRICTNESS_FILE)
         fixtures = []
         for name, args in CASES:
             state = link.parse_state_line(arduino_line(*args))
             packet = link.pack_state(state, 1.2)
-            fixtures.append({
-                'name': name, 'packet': packet.hex(),
-                'expect': {'piOn': bool(args[4]), 'fresh': True, 'tposeOn': True, 'home': args[0], 'away': args[1],
-                           'mode': args[2], 'scoreTo': args[3], 'homeColor': args[5], 'awayColor': args[6],
-                           'digits': args[7], 'event': args[8], 'eventSeq': args[9], 'ageSeconds': 1.2,
-                           'soundMode': args[10] if len(args) > 10 else 0,
-                           'clockSecs': (args[11] if len(args) > 11 else (0, 0))[0],
-                           'clockRunning': bool((args[11] if len(args) > 11 else (0, 0))[1])},
-            })
+            fixtures.append({'name': name, 'packet': packet.hex(), 'expect': expect(args, 1)})
+        # one packet per detection strictness, made through the real command path
+        try:
+            for level in range(4):
+                self.assertIsNone(link.LinkState().send_command('STRICT,%d' % level))
+                state = link.parse_state_line(arduino_line(*CASES[1][1]))
+                fixtures.append({'name': 'detection strictness %d' % level, 'packet': link.pack_state(state, 1.2).hex(),
+                                 'expect': expect(CASES[1][1], level)})
+        finally:
+            for p in (link.STRICTNESS_FILE, link.STRICTNESS_FILE + '.tmp'):
+                if os.path.exists(p):
+                    os.remove(p)
         os.makedirs(os.path.dirname(FIXTURES), exist_ok=True)
         with open(FIXTURES, 'w', newline='\n') as f:
             json.dump(fixtures, f, indent=1)

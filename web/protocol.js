@@ -38,8 +38,10 @@
   ];
 
   // Settings the phone may change (the Pi forwards only these): sport mode and volleyball game-to.
-  // plus TPOSE (the Pi's gesture scoring switch, 0 = off, 1 = on) and SCORE (score +/- like the buttons).
-  const COMMANDS = { MODE: [0, 1], TO: [15, 21, 25], TPOSE: [0, 1], SOUND: [0, 1, 2], SCORE: ['HU', 'HD', 'AU', 'AD'] };
+  // plus TPOSE (the Pi's gesture scoring switch, 0 = off, 1 = on), STRICT (T-pose detection strictness, handled on the Pi:
+  // 0 Stricter, 1 Standard, 2 Looser, 3 Loosest) and SCORE (score +/- like the buttons).
+  const COMMANDS = { MODE: [0, 1], TO: [15, 21, 25], TPOSE: [0, 1], SOUND: [0, 1, 2], STRICT: [0, 1, 2, 3],
+                     SCORE: ['HU', 'HD', 'AU', 'AD'] };
   function commandText(name, value) {
     if (!COMMANDS[name] || !COMMANDS[name].includes(value)) throw new Error('not allowed: ' + name + ' ' + value);
     return `${name},${value}`;
@@ -57,6 +59,7 @@
       fresh: !!(flags & 0x02),
       tposeOn: !!(flags & 0x04),
       soundMode: Math.min(2, (flags >> 3) & 3),
+      strictness: (flags >> 6) & 3,   // T-pose detection strictness: 0 Stricter, 1 Standard, 2 Looser, 3 Loosest
       home: v.getUint8(2),
       away: v.getUint8(3),
       mode: v.getUint8(4),

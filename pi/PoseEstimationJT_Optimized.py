@@ -94,14 +94,23 @@ else:
 NUM_THREADS = int(os.environ.get('SCOREBOARD_THREADS', '4'))  # override for benchmarking without editing code
 POSE_HOLD_FRAMES = 2              # T-Pose must be seen in this many of the last POSE_WINDOW_FRAMES frames
 POSE_WINDOW_FRAMES = 3            # (2 of 3: one frame with a flickering wrist no longer resets the hold)
-# Relaxed T-pose tier. Real T-poses are often held with the arms a little BELOW level (measured 20-25 deg by the model,
-# 10-15 deg by eye), which the strict limits reject. A pose that passes only the relaxed limits must be held longer
-# (RELAXED_HOLD_FRAMES of the last RELAXED_WINDOW_FRAMES frames, ~1 s) so a 2-frame fluke cannot score.
-RELAXED_HOLD_FRAMES = 3
-RELAXED_WINDOW_FRAMES = 4
-RELAXED_BELOW_LEVEL_K = 0.8       # elbows/wrists may hang this many shoulder widths below shoulder height (strict 0.35)
-RELAXED_ARM_SPINE_MAX_DEG = 130.0 # arm-to-spine angle limit; 90 = level, larger = hanging lower (strict 110)
-RELAXED_ELBOW_MIN_DEG = 125.0     # elbow straightness (strict 135). Above-level limits are unchanged (0.35 / 70 deg).
+# Relaxed T-pose tier and the phone's "Detection strictness" setting. Real T-poses are often held with the arms a little
+# BELOW level (measured 20-25 deg by the model, 10-15 deg by eye), which the strict limits reject. A pose that passes only
+# the relaxed limits must be held longer ('hold' of the last 'window' frames) so a short fluke cannot score. The phone picks
+# one of four presets; scoreboard_link.py stores the choice in STRICTNESS_FILE (same default path there) and it is read here
+# about once a second. Limits for arms ABOVE level never change (0.35 shoulder widths / 70 deg). Measured on the Oct 5 frames:
+# docs/engineering-log.md section 35.
+STRICTNESS_FILE = os.environ.get('SCOREBOARD_STRICTNESS_FILE', '/home/pi/Documents/scoreboard_strictness.txt')
+DEFAULT_STRICTNESS = 1            # Standard
+STRICTNESS_PRESETS = (
+    # below_k: elbows/wrists may hang this many shoulder widths below shoulder height (strict limit 0.35)
+    # spine_max: arm-to-spine angle limit, 90 = level, larger = hanging lower (strict 110);  elbow_min: strict 135
+    {'name': 'Stricter', 'below_k': 0.65, 'spine_max': 125.0, 'elbow_min': 130.0, 'hold': 3, 'window': 4},
+    {'name': 'Standard', 'below_k': 0.80, 'spine_max': 130.0, 'elbow_min': 125.0, 'hold': 3, 'window': 4},
+    {'name': 'Looser',   'below_k': 1.10, 'spine_max': 140.0, 'elbow_min': 120.0, 'hold': 3, 'window': 4},
+    {'name': 'Loosest',  'below_k': 1.50, 'spine_max': 150.0, 'elbow_min': 110.0, 'hold': 4, 'window': 5},
+)
+STRICTNESS_WINDOW_MAX = max(p['window'] for p in STRICTNESS_PRESETS)
 LIMB_CONF_THRESH = 0.15           # elbow/wrist keypoint confidence floor (shoulders use 0.20); wrists flicker
                                   # around 0.2 even when their position is steady
 CLOSE_RANGE_SHOULDER_PX = 80.0    # close-range player: shoulders at least this wide (px) ...
@@ -109,6 +118,7 @@ CLOSE_RANGE_TOP_FRACTION = 0.15   # ... and within the top 15% of the frame (hea
 COBRA_HOLD_SECONDS = 0.80         # Surrender cobra must be held for >= 0.8s (prevents triggers on sets)
 SCORE_COOLDOWN = 3.0              # Seconds to wait after a point before accepting another
 MAX_CENTER_DRIFT = 0.07           # Net center clamped to [0.43, 0.57]
+SAVE_MIN_SHOULDER_PX = 15.0       # periodic frames are only saved while a person with both shoulders found, at least this far apart, is in view
 SAVE_INTERVAL_SECONDS = 3.0       # Periodic capture interval: ~130 MB/hour (was 0.75 s / ~530 MB/hour). Fewer SD
                                   # writes = less exposure to power-cut damage; pose bursts cover the frames that matter
 MAX_CAPTURE_DIR_BYTES = 5 * 1024 * 1024 * 1024  # 5.0 GB local storage cap
@@ -439,7 +449,7 @@ def calculate_angle_px(a, b, c):
 
 
 def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf_thresh=LIMB_CONF_THRESH,
-                 expected_lean_deg=0.0, frame_h=None, diag=None):
+                 expected_lean_deg=0.0, frame_h=None, diag=None, limits=None):
     """
     Checks if pixel-space keypoints represent a true T-Pose:
     - keypoints_px: [17, 3] where [x_px, y_px, score] in true sensor pixels.
@@ -457,6 +467,7 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
 
     # Every check is evaluated and recorded (instead of returning at the first failure) so that
     # PoseEventLogger can show exactly which thresholds a near-miss T-pose failed.
+    limits = limits or STRICTNESS_PRESETS[DEFAULT_STRICTNESS]   # the relaxed tier's limits (strictness preset)
     fails = []
     m = {}
 
@@ -538,9 +549,9 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
     # The hip->shoulder axis is unreliable for some close-range frames (head cut off, hips misplaced), so
     # the better of body-axis and image-vertical measurements is used: never stricter than image-only.
     # Tolerance scales with shoulder width (close players get more pixels of leeway).
-    # Relaxed tier: hanging below shoulder height gets RELAXED_BELOW_LEVEL_K shoulder widths, above it keeps 0.35.
+    # Relaxed tier: hanging below shoulder height gets limits['below_k'] shoulder widths, above it keeps 0.35.
     tol_up = max(14.0, 0.35 * shoulder_w)
-    tol_down = max(14.0, RELAXED_BELOW_LEVEL_K * shoulder_w)
+    tol_down = max(14.0, limits['below_k'] * shoulder_w)
     axes = [np.array([0.0, -1.0], dtype=np.float32)]
     if has_hips and np.linalg.norm(hip_mid - sho_mid) > 15.0:
         axes.append((sho_mid - hip_mid) / np.linalg.norm(sho_mid - hip_mid))
@@ -578,8 +589,8 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
         m['arm_spine_deg'] = [round(left_ang), round(right_ang)]
 
         # Strict 70-110 deg (90 +- 20: the spine itself can lean ~6 deg from lens distortion at the frame edges).
-        # Relaxed: up to RELAXED_ARM_SPINE_MAX_DEG, i.e. arms may hang lower than level but not rise higher.
-        if not (70.0 <= left_ang <= RELAXED_ARM_SPINE_MAX_DEG) or not (70.0 <= right_ang <= RELAXED_ARM_SPINE_MAX_DEG):
+        # Relaxed: up to limits['spine_max'], i.e. arms may hang lower than level but not rise higher.
+        if not (70.0 <= left_ang <= limits['spine_max']) or not (70.0 <= right_ang <= limits['spine_max']):
             fails.append('arm_spine_angle')
         strict_spine_ok = (70.0 <= left_ang <= 110.0) and (70.0 <= right_ang <= 110.0)
 
@@ -604,7 +615,7 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
     left_elbow_angle = calculate_angle_px(ls[:2], le[:2], lw[:2])
     right_elbow_angle = calculate_angle_px(rs[:2], re[:2], rw[:2])
     m['elbow_deg'] = [round(left_elbow_angle), round(right_elbow_angle)]
-    if left_elbow_angle < RELAXED_ELBOW_MIN_DEG or right_elbow_angle < RELAXED_ELBOW_MIN_DEG:
+    if left_elbow_angle < limits['elbow_min'] or right_elbow_angle < limits['elbow_min']:
         fails.append('elbow_straight')
 
     # Passed, but only thanks to the relaxed limits -> main() asks for a longer hold before scoring
@@ -617,12 +628,44 @@ def check_t_pose(keypoints_px, player_global_x=0.50, conf_thresh=0.20, limb_conf
     return not fails
 
 
-def tpose_confirmed(window):
+def people_present(frame_people):
+    """True when at least one person in this frame has both shoulders found (confidence >= 0.20) at least
+    SAVE_MIN_SHOULDER_PX apart. Gates the periodic image saves: an empty court or room is not worth the SD writes."""
+    for p in frame_people:
+        k = p['kps']
+        if min(k[KP['left_shoulder']][2], k[KP['right_shoulder']][2]) >= 0.20                 and abs(k[KP['left_shoulder']][0] - k[KP['right_shoulder']][0]) >= SAVE_MIN_SHOULDER_PX:
+            return True
+    return False
+
+
+def tpose_confirmed(window, hold=None, rwindow=None):
     """window: recent per-frame results for one side, newest last: 0 = no T-pose, 1 = relaxed-only pass, 2 = strict pass.
-    Strict: POSE_HOLD_FRAMES of the last POSE_WINDOW_FRAMES. Relaxed (or mixed): RELAXED_HOLD_FRAMES of RELAXED_WINDOW_FRAMES."""
+    Strict: POSE_HOLD_FRAMES of the last POSE_WINDOW_FRAMES. Relaxed (or mixed): `hold` of the last `rwindow` frames,
+    both from the strictness preset (default Standard)."""
+    preset = STRICTNESS_PRESETS[DEFAULT_STRICTNESS]
+    hold = preset['hold'] if hold is None else hold
+    rwindow = preset['window'] if rwindow is None else rwindow
     w = list(window)
     return (sum(1 for v in w[-POSE_WINDOW_FRAMES:] if v == 2) >= POSE_HOLD_FRAMES
-            or sum(1 for v in w if v) >= RELAXED_HOLD_FRAMES)
+            or sum(1 for v in w[-rwindow:] if v) >= hold)
+
+
+_strictness_cache = {'t': -1e9, 'v': DEFAULT_STRICTNESS}
+
+
+def read_strictness(now):
+    """The phone's Detection strictness (an index into STRICTNESS_PRESETS), re-read from STRICTNESS_FILE about once a
+    second. A missing or damaged file means the default."""
+    c = _strictness_cache
+    if now - c['t'] >= 1.0:
+        c['t'] = now
+        try:
+            with open(STRICTNESS_FILE) as f:
+                v = int(f.read().strip())
+            c['v'] = v if 0 <= v < len(STRICTNESS_PRESETS) else DEFAULT_STRICTNESS
+        except (OSError, ValueError):
+            c['v'] = DEFAULT_STRICTNESS
+    return c['v']
 
 
 def check_surrender_cobra(keypoints_px, conf_thresh=0.20):
@@ -1020,7 +1063,7 @@ def annotate_pose_record(rec, rel):
     cv.line(img, (rec['net_x_px'], 0), (rec['net_x_px'], img.shape[0]), (0, 255, 255), 1)
     header = (f"{rec['time']}  frame {rel:+d}  loop {rec['loop_ms']}ms  "
               f"T-window L{''.join('r' if v == 1 else ('1' if v else '0') for v in rec['tpose_window']['LEFT'])} "
-              f"R{''.join('r' if v == 1 else ('1' if v else '0') for v in rec['tpose_window']['RIGHT'])}")
+              f"R{''.join('r' if v == 1 else ('1' if v else '0') for v in rec['tpose_window']['RIGHT'])} S{rec.get('strictness', '-')}")
     cv.putText(img, header, (8, 22), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
     cv.putText(img, header, (8, 22), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
     for p in rec['people']:
@@ -1149,7 +1192,7 @@ def main():
     print("=" * 65)
     print("Starting 12-Player Volleyball Scoreboard System (Dual-Half Pass)")
     print(f"Model: {MODEL_PATH} | Shape: {INPUT_SIZE} | Threads: {NUM_THREADS}")
-    print(f"T-Pose Hold: {POSE_HOLD_FRAMES}/{POSE_WINDOW_FRAMES} strict, {RELAXED_HOLD_FRAMES}/{RELAXED_WINDOW_FRAMES} relaxed | Cobra Hold: {COBRA_HOLD_SECONDS}s")
+    print(f"T-Pose Hold: {POSE_HOLD_FRAMES}/{POSE_WINDOW_FRAMES} strict, relaxed tier per strictness preset | Cobra Hold: {COBRA_HOLD_SECONDS}s")
     print("=" * 65)
 
     interpreter = tflite.Interpreter(model_path=MODEL_PATH, num_threads=NUM_THREADS)
@@ -1170,8 +1213,11 @@ def main():
     keystone = KeystoneEstimator()
     capture_saver = AsyncCaptureSaver()
 
-    # T-pose confirms per tpose_confirmed(): strict 2 of the last 3 frames, or relaxed-only 3 of the last 4
-    tpose_window = {s: collections.deque(maxlen=max(POSE_WINDOW_FRAMES, RELAXED_WINDOW_FRAMES)) for s in ('LEFT', 'RIGHT')}
+    # T-pose confirms per tpose_confirmed(): strict 2 of the last 3 frames, or relaxed-only `hold` of the last `window`
+    # frames of the phone's strictness preset
+    tpose_window = {s: collections.deque(maxlen=max(POSE_WINDOW_FRAMES, STRICTNESS_WINDOW_MAX)) for s in ('LEFT', 'RIGHT')}
+    last_strictness = strictness = read_strictness(time.monotonic())
+    print(f"Detection strictness: {STRICTNESS_PRESETS[strictness]['name']} (file {STRICTNESS_FILE})", flush=True)
     pose_logger = PoseEventLogger(capture_saver)
     frame_no = 0
     cobra_start_time = {
@@ -1191,6 +1237,7 @@ def main():
                                            period=HELLO_PERIOD, grace=CAMERA_OUTAGE_GRACE,
                                            tpose_disabled_file=TPOSE_DISABLED_FILE).start()
     last_periodic_save_time = time.monotonic()
+    periodic_saved = periodic_skipped = 0
     last_oled_update_time = 0.0
     oled_awake_until = time.monotonic() + OLED_BOOT_SECONDS
     oled_lit = False
@@ -1246,6 +1293,12 @@ def main():
             # Run inference on Right Half (Away Team - up to 6 players)
             right_people = run_inference_half(interpreter, INPUT_SIZE, right_half)
 
+            strictness = read_strictness(t)
+            if strictness != last_strictness:
+                print(f"[STRICTNESS] now {STRICTNESS_PRESETS[strictness]['name']} (from the phone)", flush=True)
+                last_strictness = strictness
+            limits = STRICTNESS_PRESETS[strictness]
+
             current_detections = {
                 'LEFT': {'tpose': False, 'cobra': False},
                 'RIGHT': {'tpose': False, 'cobra': False}
@@ -1287,7 +1340,7 @@ def main():
 
                     diag = {}
                     is_tpose = check_t_pose(kps_px, player_global_x=torso_x / iw,
-                                            expected_lean_deg=keystone.lean_deg(torso_x / iw), frame_h=ih, diag=diag)
+                                            expected_lean_deg=keystone.lean_deg(torso_x / iw), frame_h=ih, diag=diag, limits=limits)
                     is_cobra = check_surrender_cobra(kps_px)
                     if is_tpose:
                         level = 1 if diag['metrics'].get('relaxed_only') else 2
@@ -1332,7 +1385,7 @@ def main():
                 'time': datetime.now().strftime('%H:%M:%S.%f')[:-3],
                 'loop_ms': int(1000 * (time.monotonic() - loop_start)),
                 'image': raw_copy, 'crop_top': crop_top, 'net_x_px': split_x,
-                'tpose_window': {s: list(tpose_window[s]) for s in ('LEFT', 'RIGHT')},
+                'tpose_window': {s: list(tpose_window[s]) for s in ('LEFT', 'RIGHT')}, 'strictness': strictness,
                 'people': frame_people,
             })
 
@@ -1341,9 +1394,9 @@ def main():
                 cooldown = left_cooldown if s == 'LEFT' else right_cooldown
                 if cooldown == 0.0:
                     # Check confirmed T-Pose (+1 Point)
-                    if armed[s]['tpose'] and tpose_confirmed(tpose_window[s]):
+                    if armed[s]['tpose'] and tpose_confirmed(tpose_window[s], limits['hold'], limits['window']):
                         print(f"\n[{datetime.now():%H:%M:%S}] >>> CONFIRMED POINT {s} (window {list(tpose_window[s])}: "
-                              f"strict {POSE_HOLD_FRAMES}/{POSE_WINDOW_FRAMES} or relaxed {RELAXED_HOLD_FRAMES}/{RELAXED_WINDOW_FRAMES}) <<<\n")
+                              f"{limits['name']}: strict {POSE_HOLD_FRAMES}/{POSE_WINDOW_FRAMES} or relaxed {limits['hold']}/{limits['window']}) <<<\n")
                         arduino.send_event(s[0], 'P')   # camera half L / R; the Arduino maps it to a team
                         if s == 'LEFT':
                             left_cooldown = t + SCORE_COOLDOWN
@@ -1373,10 +1426,15 @@ def main():
                         capture_saver.save_confirmed(raw_copy, frame, s, 'COBRA')
                         pose_logger.trigger(s, 'COBRA')
 
-            # Periodic background frame capture (Async: every ~0.75s gives 4.5h in 5GB)
+            # Periodic background frame capture (async, every SAVE_INTERVAL_SECONDS) - only while someone is in view.
+            # While nobody is there the timer stays due, so the first frame with a person is saved straight away.
             if (t - last_periodic_save_time) >= SAVE_INTERVAL_SECONDS:
-                last_periodic_save_time = t
-                capture_saver.save_periodic(raw_copy)
+                if people_present(frame_people):
+                    last_periodic_save_time = t
+                    capture_saver.save_periodic(raw_copy)
+                    periodic_saved += 1
+                else:
+                    periodic_skipped += 1
 
             # Serial hello to the Arduino (its heartbeat) keeps going while frames keep being processed
             arduino.alive(t)
@@ -1434,7 +1492,7 @@ def main():
                 loop_ms = 1000.0 * (t - status_start) / max(1, status_loops)
                 print(f"[STATUS] loop={loop_ms:.0f}ms ({1000.0 / loop_ms:.1f} fps) threads={NUM_THREADS} "
                       f"net_center={calibrator.center_x:.3f} keystone={keystone.slope:.1f}deg/x{keystone.offset:+.1f} "
-                      f"temp={temp_c:.1f}C cpu={cpu_mhz}MHz")
+                      f"temp={temp_c:.1f}C cpu={cpu_mhz}MHz periodic_saved={periodic_saved} empty_frames_skipped={periodic_skipped}")
                 status_start = t
                 status_loops = 0
 

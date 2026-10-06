@@ -208,11 +208,16 @@
 
   // ---- scoreboard settings: sport and volleyball game-to, sent to the Arduino through the Pi --------------
   let boardNote = '';
+  // what the scoreboard / Pi currently has for each setting (null until the first state arrives)
+  function currentSetting(name) {
+    if (!state) return null;
+    return name === 'MODE' ? state.mode : name === 'SOUND' ? state.soundMode : name === 'STRICT' ? state.strictness : state.scoreTo;
+  }
   function syncBoardSettings() {
     const canSend = demo || (connected && !!commandChar);
     document.querySelectorAll('#board-settings [data-cmd]').forEach((btn) => {
       const name = btn.dataset.cmd, value = Number(btn.dataset.value);
-      const current = !state ? null : name === 'MODE' ? state.mode : name === 'SOUND' ? state.soundMode : state.scoreTo;
+      const current = currentSetting(name);
       btn.classList.toggle('on', current === value);
       btn.disabled = !canSend || (name === 'TO' && state && state.mode === 1);
     });
@@ -283,7 +288,7 @@
 
   async function sendBoardSetting(btn) {
     const name = btn.dataset.cmd, value = Number(btn.dataset.value);
-    if (state && (name === 'MODE' ? state.mode : state.scoreTo) === value) return;
+    if (state && currentSetting(name) === value) return;
     if (name === 'MODE' && !confirm(`Switch the scoreboard to ${value ? 'tennis' : 'volleyball'}? This resets the score to 0–0.`)) return;
     const text = P.commandText(name, value);
     if (demo) { applyDemoCommand(name, value); return; }
@@ -353,7 +358,13 @@
   setInterval(renderClock, 250);
 
   let prevTposeOn = null;
+  let prevStrictness = null;
+  const STRICTNESS_NAMES = ['Stricter', 'Standard', 'Looser', 'Loosest'];
   function handleState(s) {
+    if (prevStrictness !== null && s.strictness !== prevStrictness) {
+      toast('DETECTION: ' + (STRICTNESS_NAMES[s.strictness] || '').toUpperCase(), 'T-pose strictness changed');
+    }
+    prevStrictness = s.strictness;
     if (prevTposeOn !== null && s.tposeOn !== prevTposeOn) {
       toast('T-POSE DETECTION ' + (s.tposeOn ? 'ON' : 'OFF'), s.tposeOn ? 'gestures score again' : 'gestures are ignored');
     }
@@ -593,7 +604,7 @@
     wantConnection = false;
     hideOverlay();
     setLink('Demo', 'ok');
-    demoState = { piOn: true, tposeOn: true, soundMode: 0, fresh: true, home: 17, away: 15, mode: 0, scoreTo: 21,
+    demoState = { piOn: true, tposeOn: true, strictness: 1, soundMode: 0, fresh: true, home: 17, away: 15, mode: 0, scoreTo: 21,
       homeColor: DEMO_COLORS[0][0], awayColor: DEMO_COLORS[0][1], digits: [], event: 'BOOT', eventSeq: 0, ageSeconds: 0 };
     lastEventSeq = null;
     demoPublish();
@@ -606,6 +617,7 @@
     if (name === 'MODE') { demoState.mode = value; demoState.home = demoState.away = 0; demoPublish('MD'); }
     else if (name === 'TPOSE') { demoState.tposeOn = !!value; demoPublish(); }
     else if (name === 'SOUND') { demoState.soundMode = value; demoPublish('SM'); }
+    else if (name === 'STRICT') { demoState.strictness = value; demoPublish(); }
     else if (name === 'SCORE') {
       const key = value[0] === 'H' ? 'home' : 'away';
       demoState[key] = Math.max(0, demoState[key] + (value[1] === 'U' ? 1 : -1));
