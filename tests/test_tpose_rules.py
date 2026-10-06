@@ -121,8 +121,9 @@ class TPoseRuleTest(unittest.TestCase):
 
 class StrictnessPresetTest(unittest.TestCase):
     """The phone's Detection strictness: 0 Stricter, 1 Standard (default), 2 Looser, 3 Loosest. Each step lets arms hang a
-    little lower; arms ABOVE level are never relaxed. (Skeleton: shoulders 80 px, arms 120 px, so the allowed drop is
-    0.65 / 0.8 / 1.1 / 1.5 shoulder widths = 52 / 64 / 88 / 120 px against 120 * sin(drop_deg).)"""
+    little lower, down to about 45 degrees away from the side of the body for Loosest; arms ABOVE level are never relaxed.
+    (Skeleton: shoulders 80 px, arms 120 px, so the allowed drop is 0.65 / 0.8 / 0.9 / 1.0 shoulder widths = 52 / 64 / 72 /
+    80 px against 120 * sin(drop_deg); the spine angle limits are 125 / 130 / 130 / 135 deg = 35 / 40 / 40 / 45 deg below level.)"""
 
     def passes(self, drop, preset):
         return check(person(drop), preset)[0]
@@ -137,16 +138,17 @@ class StrictnessPresetTest(unittest.TestCase):
         self.assertEqual(spine, sorted(spine))
 
     def test_default_limits_are_standard(self):
-        for drop in (0, 15, 30, 40, 55):
+        for drop in (0, 15, 30, 35, 40, 55):
             self.assertEqual(check(person(drop))[0], check(person(drop), 1)[0], drop)
 
     def test_each_step_accepts_lower_arms(self):
         expect = {                 # drop_deg: (stricter, standard, looser, loosest)
             15: (True, True, True, True),
             30: (False, True, True, True),
-            40: (False, False, True, True),
-            55: (False, False, False, True),
-            65: (False, False, False, False),    # past even the loosest limit (spine angle 155 deg > 150)
+            35: (False, False, True, True),
+            40: (False, False, False, True),
+            45: (False, False, False, False),    # 120 * sin(45) = 85 px > the loosest 80 px drop: just past the loosest limit
+            60: (False, False, False, False),
         }
         for drop, row in expect.items():
             self.assertEqual(tuple(self.passes(drop, i) for i in range(4)), row, 'drop %d' % drop)
@@ -162,13 +164,12 @@ class StrictnessPresetTest(unittest.TestCase):
             self.assertTrue(ok, fails)
             self.assertFalse(m['relaxed_only'])
 
-    def test_the_loosest_wants_a_longer_hold(self):
-        loosest, standard = E['STRICTNESS_PRESETS'][3], E['STRICTNESS_PRESETS'][1]
-        self.assertGreater(loosest['hold'], standard['hold'])
-        # three relaxed frames in a row: enough for Standard, not for Loosest
-        self.assertTrue(E['tpose_confirmed']([0, 1, 1, 1], standard['hold'], standard['window']))
-        self.assertFalse(E['tpose_confirmed']([0, 1, 1, 1], loosest['hold'], loosest['window']))
-        self.assertTrue(E['tpose_confirmed']([1, 1, 1, 1], loosest['hold'], loosest['window']))
+    def test_every_preset_holds_the_same_3_of_4(self):
+        for p in E['STRICTNESS_PRESETS']:
+            self.assertEqual((p['hold'], p['window']), (3, 4), p['name'])
+            self.assertFalse(E['tpose_confirmed']([0, 1, 1, 0], p['hold'], p['window']), p['name'])   # two relaxed frames
+            self.assertTrue(E['tpose_confirmed']([0, 1, 1, 1], p['hold'], p['window']), p['name'])    # three of four
+            self.assertTrue(E['tpose_confirmed']([1, 1, 0, 1], p['hold'], p['window']), p['name'])
 
     def test_history_is_long_enough_for_every_preset(self):
         self.assertEqual(E['STRICTNESS_WINDOW_MAX'], max(p['window'] for p in E['STRICTNESS_PRESETS']))

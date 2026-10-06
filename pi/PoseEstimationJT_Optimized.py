@@ -97,8 +97,9 @@ POSE_HOLD_FRAMES = 2              # T-Pose must be seen in this many of the last
 POSE_WINDOW_FRAMES = 3            # (2 of 3: one frame with a flickering wrist no longer resets the hold)
 # Relaxed T-pose tier and the phone's "Detection strictness" setting. Real T-poses are often held with the arms a little
 # BELOW level (measured 20-25 deg by the model, 10-15 deg by eye), which the strict limits reject. A pose that passes only
-# the relaxed limits must be held longer ('hold' of the last 'window' frames) so a short fluke cannot score. The phone picks
-# one of four presets; scoreboard_link.py stores the choice in STRICTNESS_FILE (same default path there) and it is read here
+# the relaxed limits must be held longer ('hold' of the last 'window' frames, 3 of 4 for every preset) so a short fluke cannot
+# score. The phone picks one of four presets, from about 60 deg (Stricter) down to about 45 deg (Loosest) of arm angle away
+# from the side of the body (90 = a level T-pose, 0 = arms hanging); scoreboard_link.py stores the choice in STRICTNESS_FILE (same default path there) and it is read here
 # about once a second. Limits for arms ABOVE level never change (0.35 shoulder widths / 70 deg). Measured on the Oct 5 frames:
 # docs/engineering-log.md section 35.
 STRICTNESS_FILE = os.environ.get('SCOREBOARD_STRICTNESS_FILE', '/home/pi/Documents/scoreboard_strictness.txt')
@@ -108,8 +109,8 @@ STRICTNESS_PRESETS = (
     # spine_max: arm-to-spine angle limit, 90 = level, larger = hanging lower (strict 110);  elbow_min: strict 135
     {'name': 'Stricter', 'below_k': 0.65, 'spine_max': 125.0, 'elbow_min': 130.0, 'hold': 3, 'window': 4},
     {'name': 'Standard', 'below_k': 0.80, 'spine_max': 130.0, 'elbow_min': 125.0, 'hold': 3, 'window': 4},
-    {'name': 'Looser',   'below_k': 1.10, 'spine_max': 140.0, 'elbow_min': 120.0, 'hold': 3, 'window': 4},
-    {'name': 'Loosest',  'below_k': 1.50, 'spine_max': 150.0, 'elbow_min': 110.0, 'hold': 4, 'window': 5},
+    {'name': 'Looser',   'below_k': 0.90, 'spine_max': 130.0, 'elbow_min': 120.0, 'hold': 3, 'window': 4},
+    {'name': 'Loosest',  'below_k': 1.00, 'spine_max': 135.0, 'elbow_min': 115.0, 'hold': 3, 'window': 4},
 )
 STRICTNESS_WINDOW_MAX = max(p['window'] for p in STRICTNESS_PRESETS)
 LIMB_CONF_THRESH = 0.15           # elbow/wrist keypoint confidence floor (shoulders use 0.20); wrists flicker

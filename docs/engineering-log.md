@@ -678,16 +678,16 @@ An indoor session produced 339 periodic frames and 7 event bursts (`PoseEvents`)
 
 ## 35. Detection strictness on the phone, and no images of an empty room (Oct 5-6 2026)
 
-* **Detection strictness** (Settings > Detection). Four presets of the relaxed T-pose tier from section 34, chosen on the phone and stored on the Pi. All four keep the strict tier exactly as it was (a clean T-pose scores in 2 of 3 frames); they differ in how far arms may hang below level and how long such a pose must be held. Arms above level are never relaxed.
+* **Detection strictness** (Settings > Detection). Four presets of the relaxed T-pose tier from section 34, chosen on the phone and stored on the Pi. Two confirmation rules apply to every preset and do not change with it: a **clean T-pose scores when it is seen in 2 of the last 3 frames**, and a **drooping pose (one that passes only the relaxed limits) needs 3 of the last 4**. At the engine's ~3.2 frames per second a frame is ~0.3 s, so the drooping pose takes about one frame longer than a clean one. What the presets change is how far the arms may hang below level; arms above level are never relaxed.
 
-  | | below level (shoulder widths / spine angle) | elbows | hold | what it does |
-  |---|---|---|---|---|
-  | Stricter | 0.65 / 125 deg | 130 deg | 3 of 4 frames | arms close to level; still scores the drooping pose of section 34 |
-  | **Standard** (default) | 0.80 / 130 deg | 125 deg | 3 of 4 | the setting tested on Oct 5 |
-  | Looser | 1.10 / 140 deg | 120 deg | 3 of 4 | arms may hang low |
-  | Loosest | 1.50 / 150 deg | 110 deg | 4 of 5 | arms out and down count; **can score people who are just standing with their arms away from their sides** |
+  | | arm angle away from the side of the body (90 = level T-pose), at least | height limit / spine-angle limit | elbows |
+  |---|---|---|---|
+  | Stricter | about 60 deg | 0.65 shoulder widths / 125 deg | 130 deg |
+  | **Standard** (default) | about 55 deg | 0.80 / 130 deg | 125 deg |
+  | Looser | about 50 deg | 0.90 / 130 deg | 120 deg |
+  | Loosest | about 45 deg | 1.00 / 135 deg | 115 deg |
 
-  The ladder was measured on the Oct 5 frames, not guessed. Every rung kept the same 6 confirmations in the replay and lost none of the 35 poses that had scored; 0.50/120/130 was too strict (it rejected the drooping T-pose), and beyond the Loosest setting the false passes explode (1.5/150/110 let 7 sightings through in ordinary play, 2.0/160/100 let 20). Most of those seven were people standing or walking with their arms out and down, which is why the Loosest rung also wants a longer hold: 4 of 5 frames keeps its Oct 1 false-trigger exposure at the Stricter rung's level (6 bursts in the 1.6 h log, against 11 with the 3 of 4 hold).
+  (The angles assume arms about 1.4 shoulder widths long; the spine-angle limit binds when they are shorter. For scale, the tall player's drooping T-pose measured about 65-70 deg away from the side.) Measured on the Oct 5 frames: all four keep the 35 poses that scored before and the same 6 replayed confirmations, the drooping T-pose scores at 09:53:02-04 instead of never, and none of them lets a single sighting of ordinary play through (0 of 1,696). On the 1.6 h Oct 1 log the number of short bursts that could score (3 frames or more) is 6 / 8 / 8 / 9 from Stricter to Loosest. An earlier Loosest that accepted arms only 30 deg away from the side let 7 ordinary sightings through, mostly people standing or walking with their arms away from their sides, so it was dropped; a longer 4-of-5 hold for it was dropped too (the hold is the same for all four).
   How it flows: the page sends `STRICT,n` over Bluetooth, `scoreboard_link.py` writes `scoreboard_strictness.txt` (atomically, so a power cut cannot leave it half-written) and reports `n` back in bits 6-7 of the state flags, and the engine re-reads the file about once a second (`[STRICTNESS] now Looser (from the phone)` in the journal; the PoseEvents header shows `S<n>`). The setting survives a reboot.
 * **No images of an empty room.** The periodic captures (every 3 s) now only happen while at least one person has both shoulders found at least 15 px apart (`people_present()`); while nobody is there the timer stays armed, so the first frame with a person is saved at once. Replayed through the real engine on a video of an empty room, it wrote 0 images where the old code wrote 7 in 30 s; with people in view it saves as before. The `[STATUS]` line shows `periodic_saved` and `empty_frames_skipped`. Event bursts (confirmed points and cobras) were never affected: they only happen when someone is there.
 * **A battery death is survivable.** The scoreboard lost power mid-session on Oct 6; the Pi came back by itself (ext4 journal recovery, no errors), every deployed file matched its checksum, and the engine and link service restarted on their own.
